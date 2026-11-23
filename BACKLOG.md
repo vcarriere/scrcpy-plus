@@ -425,7 +425,7 @@ The read-only native status resolves effective paths without running either tool
 or a wrapper. Missing saved overrides explain their fallback; a selected custom
 file deleted afterward stays explicitly custom/unavailable. Reset is per tool.
 
-### 15. Use an affirmative Check for updates setting
+### 15. Automatic and manual update checks
 
 The owner requested the label/inversion change now and deferred the expanded
 ADB/scrcpy update checks. Only the existing SCRCPY+ check is currently covered.
@@ -434,6 +434,15 @@ ADB/scrcpy update checks. Only the existing SCRCPY+ check is currently covered.
       existing SCRCPY+ app update check. Use the official Google Platform-Tools
       source for ADB and official Genymobile releases for scrcpy, with separate
       installed/available versions and results for each component.
+- [ ] Rename the current toggle to **Automatically check for updates** so its
+      scope is clear. It controls background checks, not automatic installation.
+      Preserve the current preference and update all translations. Avoid
+      **Automatic updates**, which could imply that updates install themselves.
+- [ ] Add a **Check for updates now** button that works whether automatic checks
+      are on or off, without changing that saved preference. Check SCRCPY+, ADB,
+      and scrcpy when the expanded checker is implemented; show per-component
+      results and errors. Disable duplicate requests while a check is running.
+      A manual check must not silently install updates or replace executables.
 - [x] Rename **Do not check for updates** to **Check for updates** and invert
       the checkbox/storage logic to match: checked enables checks, unchecked
       disables them. A fresh profile should have the setting checked by default.
@@ -446,8 +455,9 @@ ADB/scrcpy update checks. Only the existing SCRCPY+ check is currently covered.
       disabled automatic checks issue no SCRCPY+ release request. Keep checking
       separate from installation: this checkbox does not install or replace tools.
 - [ ] When the expanded update work is implemented, apply this preference to all
-      covered components and verify that disabled checks make no release requests
-      for SCRCPY+, ADB, or scrcpy.
+      covered components and verify that disabling automatic checks prevents
+      background release requests for SCRCPY+, ADB, and scrcpy, while explicit
+      manual checks remain available and work normally.
 
 ### 16. Keep the viewport steady when toggling Advanced ADB controls
 
