@@ -1,5 +1,10 @@
 use serde::Serialize;
+use std::time::{ Duration, Instant };
 use crate::{ adb_server, system_command };
+use crate::screen_power::AdbClient;
+
+const CHECK_TIMEOUT: Duration = Duration::from_secs(7);
+const SDK_TIMEOUT: Duration = Duration::from_millis(250);
 
 #[derive(Debug, Serialize)]
 pub struct Observation {
@@ -9,6 +14,7 @@ pub struct Observation {
     power_commands: &'static str,
 }
 
+#[cfg(test)]
 fn focus(displays: &str) -> Option<&str> {
     let mut focused = None;
     for line in displays.lines() {
@@ -40,6 +46,7 @@ fn flags(attributes: &str) -> Option<bool> {
     Some(names.contains(&"SECURE"))
 }
 
+#[cfg(test)]
 fn window_flag(dump: &str, token: &str) -> Option<bool> {
     let mut selected = String::new();
     let mut matching = false;
@@ -116,48 +123,63 @@ pub fn visible_protection(dump: &str) -> Option<bool> {
     (!unknown).then_some(false)
 }
 
-pub fn power_commands(help: &str) -> &'static str {
-    let advertised = |command: &str| help.lines().any(|line| line.trim().split_whitespace().next() == Some(command));
-    if !advertised("power-off") { return "unavailable"; }
-    if advertised("power-on") { return "on_off"; }
-    if advertised("power-reset") { return "reset_off"; }
-    "unavailable"
+#[derive(PartialEq)]
+struct VisibleState {
+    protected: bool,
+    reason: &'static str,
+    windows: Vec<(String, Option<bool>, bool)>,
+}
+
+fn visible_state(dump: &str) -> Option<VisibleState> {
+    let protected = visible_protection(dump)?;
+    let mut windows = Vec::new();
+    for block in visible_windows(dump)? {
+        let heading = block.lines().next()?;
+        let token = heading.split_once("Window{")?.1.split_whitespace().next()?;
+        if token.is_empty() || token.len() > 8 || !token.bytes().all(|byte| byte.is_ascii_hexdigit()) { return None; }
+        windows.push((token.to_string(), block_flag(&block), biometric(&block)));
+    }
+    windows.sort_by(|first, second| first.0.cmp(&second.0));
+    if windows.windows(2).any(|pair| pair[0].0 == pair[1].0) { return None; }
+    let reason = if windows.iter().any(|(_, secure, _)| *secure == Some(true)) { "visible_secure_window" }
+        else if windows.iter().any(|(_, _, biometric)| *biometric) { "visible_biometric_prompt" }
+        else { "visible_windows_clear" };
+    Some(VisibleState { protected, reason, windows })
 }
 
 fn read(device: &str, command: &mut impl FnMut(&[&str]) -> Result<String, String>) -> Result<Observation, String> {
     if device.is_empty() || device.len() > 1024 || device.starts_with('-') || device.chars().any(|character| character.is_control() || character.is_whitespace()) {
         return Err("Select a valid connected device first.".into());
     }
-    let mut observation = Observation { state: "unknown", reason: "focus_unavailable", android_sdk: None, power_commands: "unavailable" };
-    let before = command(&["-s", device, "shell", "dumpsys", "window", "displays"])?;
-    let Some(token) = focus(&before) else { return Ok(observation); };
-    // The only variable shell argument is a validated hexadecimal window token.
-    // Filter the dump to that window instead of collecting all app windows.
-    let window = command(&["-s", device, "shell", "dumpsys", "window", token])?;
-    let after = command(&["-s", device, "shell", "dumpsys", "window", "displays"])?;
-    if focus(&after) != Some(token) {
-        observation.reason = "focus_changed";
-        return Ok(observation);
-    }
-    observation.reason = "window_unavailable";
-    if let Some(secure) = window_flag(&window, token) {
-        observation.state = if secure { "secure" } else { "unflagged" };
-        observation.reason = "focused_window_flag";
+    let mut observation = Observation { state: "unknown", reason: "visible_state_unavailable", android_sdk: None, power_commands: "not_checked" };
+    // Use the same visible main-display signal as the automatic controller,
+    // including biometric overlays above a still-focused clear app. Recheck the
+    // relevant windows/flags instead of returning a result during a transition.
+    let before = command(&["-s", device, "shell", "dumpsys", "window", "visible"])?;
+    let after = command(&["-s", device, "shell", "dumpsys", "window", "visible"])?;
+    if let (Some(before), Some(after)) = (visible_state(&before), visible_state(&after)) {
+        if before == after {
+            observation.state = if after.protected { "secure" } else { "unflagged" };
+            observation.reason = after.reason;
+        } else { observation.reason = "visible_state_changed"; }
     }
     observation.android_sdk = command(&["-s", device, "shell", "getprop", "ro.build.version.sdk"]).ok().and_then(|value| value.trim().parse().ok());
-    if let Ok(help) = command(&["-s", device, "shell", "cmd", "display", "help"]) {
-        observation.power_commands = power_commands(&help);
-    }
     Ok(observation)
+}
+
+fn read_captured(device: &str, client: &AdbClient, query: &mut impl FnMut(&AdbClient, &[&str], Instant) -> Result<String, String>) -> Result<Observation, String> {
+    let deadline = Instant::now() + CHECK_TIMEOUT;
+    read(device, &mut |args| {
+        let timeout = if args.ends_with(&["getprop", "ro.build.version.sdk"]) { deadline.min(Instant::now() + SDK_TIMEOUT) } else { deadline };
+        query(client, args, timeout)
+    })
 }
 
 pub fn inspect(device: &str) -> Result<Observation, String> {
     // Hold the operation guard for the whole read, so Stop cannot split it.
     let _operation = adb_server::begin(false)?;
-    read(device, &mut |args| {
-        if args.ends_with(&["cmd", "display", "help"]) { return system_command::adb_display_help(device); }
-        system_command::adb(args.to_vec())
-    })
+    let client = AdbClient { path: system_command::adb_path(), socket: adb_server::endpoint()? };
+    read_captured(device, &client, &mut |client, args, deadline| client.query(args, &mut || Instant::now() >= deadline, false))
 }
 
 #[cfg(test)]
@@ -166,6 +188,10 @@ mod tests {
 
     fn window(flags: &str, display: u32) -> String {
         format!("WINDOW MANAGER WINDOWS\n  Window #0 Window{{abc123 u0 example.app/Screen}}:\n    mDisplayId={} mSession=Session{{sample}}\n    mAttrs={{(0,0)(fillxfill) sim={{adjust=resize}} ty=BASE_APPLICATION\n      fl={}\n      pfl=HIDE_NON_SYSTEM_OVERLAY_WINDOWS\n    }}\n    isVisible=true\n", display, flags)
+    }
+
+    fn visible(flags: &str) -> String {
+        window(flags, 0).replace("    isVisible=true", "    mHasSurface=true isReadyForDisplay()=true\n    isVisible=true")
     }
 
     #[test]
@@ -215,44 +241,108 @@ mod tests {
     }
 
     #[test]
-    fn changing_focus_never_produces_a_stale_secure_result() {
-        let mut calls = 0;
-        let result = read("synthetic-device", &mut |_| {
-            calls += 1;
-            Ok(match calls {
-                1 => "mCurrentFocus=Window{abc123 u0 example.app/Screen}".into(),
-                2 => window("SECURE", 0),
-                _ => "mCurrentFocus=Window{def456 u0 example.app/Screen}".into(),
-            })
-        }).unwrap();
-        assert_eq!(result.state, "unknown");
-        assert_eq!(result.reason, "focus_changed");
-        assert_eq!(calls, 3);
+    fn changed_or_unreadable_visible_state_never_produces_a_stale_result() {
+        for (after, reason) in [
+            (visible("HARDWARE_ACCELERATED"), "visible_state_changed"),
+            (visible("SECURE").replace("abc123", "def456"), "visible_state_changed"),
+            ("Permission denied".into(), "visible_state_unavailable"),
+            (visible("unknown"), "visible_state_unavailable"),
+            (visible("SECURE") + &visible("SECURE"), "visible_state_unavailable"),
+        ] {
+            let mut reads = 0;
+            let result = read("synthetic-device", &mut |args| {
+                if args.ends_with(&["getprop", "ro.build.version.sdk"]) { return Ok("37".into()); }
+                reads += 1;
+                Ok(if reads == 1 { visible("SECURE") } else { after.clone() })
+            }).unwrap();
+            assert_eq!(result.state, "unknown");
+            assert_eq!(result.reason, reason);
+            assert_eq!(reads, 2);
+        }
     }
 
     #[test]
-    fn probe_uses_read_only_targeted_commands_and_reports_capabilities_honestly() {
+    fn probe_uses_only_read_only_visible_queries_and_optional_sdk_metadata() {
         let mut calls = Vec::new();
         let observation = read("synthetic-device", &mut |args| {
             assert_eq!(&args[..3], ["-s", "synthetic-device", "shell"]);
             calls.push(args[3..].join(" "));
             Ok(match args[3..] {
-                ["dumpsys", "window", "displays"] => "mCurrentFocus=Window{abc123 u0 example.app/Screen}".into(),
-                ["dumpsys", "window", "abc123"] => window("SECURE", 0),
+                ["dumpsys", "window", "visible"] => visible("SECURE"),
                 ["getprop", "ro.build.version.sdk"] => "37\n".into(),
-                ["cmd", "display", "help"] => "  power-reset DISPLAY_ID\n  power-off DISPLAY_ID\n".into(),
                 _ => panic!("Unexpected or mutating command"),
             })
         }).unwrap();
         assert_eq!(observation.state, "secure");
-        assert_eq!(observation.power_commands, "reset_off");
-        assert_eq!(calls.len(), 5);
-        assert_eq!(power_commands("  power-on DISPLAY_ID\n  power-off DISPLAY_ID"), "on_off");
-        assert_eq!(power_commands("unrecognized command"), "unavailable");
+        assert_eq!(observation.power_commands, "not_checked");
+        assert_eq!(calls.len(), 3);
         for device in ["", "-s", "bad\nselector"] { assert!(read(device, &mut |_| panic!("invalid selector must not run")).is_err()); }
         let serialized = serde_json::to_string(&observation).unwrap();
         assert!(!serialized.contains("example.app"));
         assert!(!serialized.contains("abc123"));
+    }
+
+    #[test]
+    fn manual_check_matches_unfocused_secure_windows_and_biometric_overlays() {
+        let clear = visible("HARDWARE_ACCELERATED");
+        let secure = visible("SECURE").replace("abc123", "def456");
+        let biometric = visible("HARDWARE_ACCELERATED").replace("abc123", "def456").replace("example.app/Screen", "BiometricPrompt")
+            .replace("ty=BASE_APPLICATION", "ty=APPLICATION_OVERLAY").replace("mAttrs=", "package=com.android.systemui\n    mAttrs=");
+        for (dump, expected, reason) in [
+            (clear.clone(), "unflagged", "visible_windows_clear"),
+            (clear.clone() + &secure, "secure", "visible_secure_window"),
+            (clear.clone() + &biometric, "secure", "visible_biometric_prompt"),
+            (clear.clone() + &biometric.replace("com.android.systemui", "example.app"), "unflagged", "visible_windows_clear"),
+        ] {
+            let result = read("synthetic-device", &mut |args| Ok(if args.ends_with(&["getprop", "ro.build.version.sdk"]) { "37".into() } else { dump.clone() })).unwrap();
+            assert_eq!(result.state, expected);
+            assert_eq!(result.reason, reason);
+            assert_eq!(visible_protection(&dump), Some(expected == "secure"));
+        }
+    }
+
+    #[test]
+    fn manual_queries_share_a_captured_client_and_bounded_deadline() {
+        let client = AdbClient { path: "selected-adb".into(), socket: "tcp:127.0.0.1:1".into() };
+        let started = Instant::now();
+        let mut visible_deadline = None;
+        let result = read_captured("synthetic-device", &client, &mut |captured, args, deadline| {
+            assert_eq!(captured.path, "selected-adb");
+            assert_eq!(captured.socket, "tcp:127.0.0.1:1");
+            assert!(deadline <= started + CHECK_TIMEOUT + Duration::from_millis(20));
+            if args.ends_with(&["getprop", "ro.build.version.sdk"]) {
+                assert!(deadline <= Instant::now() + SDK_TIMEOUT);
+                return Err("Metadata unavailable".into());
+            }
+            if let Some(previous) = visible_deadline { assert_eq!(deadline, previous); }
+            visible_deadline = Some(deadline);
+            Ok(visible("SECURE"))
+        }).unwrap();
+        assert_eq!(result.state, "secure");
+        assert_eq!(result.android_sdk, None);
+    }
+
+    #[test]
+    #[ignore = "Internal subprocess fixture; sleeps only when its explicit marker is supplied"]
+    fn slow_metadata_fixture() {
+        if std::env::args().any(|argument| argument == "SCRCPY_PLUS_METADATA_FIXTURE") {
+            std::thread::sleep(Duration::from_secs(30));
+        }
+    }
+
+    #[test]
+    fn stalled_optional_metadata_cannot_hold_a_determined_manual_result() {
+        let client = AdbClient { path: std::env::current_exe().unwrap().to_string_lossy().to_string(), socket: "tcp:127.0.0.1:1".into() };
+        let started = Instant::now();
+        let result = read_captured("synthetic-device", &client, &mut |captured, args, deadline| {
+            if args.ends_with(&["getprop", "ro.build.version.sdk"]) {
+                return captured.query(&["--ignored", "--exact", "protected_screen::tests::slow_metadata_fixture", "--skip", "SCRCPY_PLUS_METADATA_FIXTURE"], &mut || Instant::now() >= deadline, false);
+            }
+            Ok(visible("SECURE"))
+        }).unwrap();
+        assert_eq!(result.state, "secure");
+        assert_eq!(result.android_sdk, None);
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]
@@ -263,6 +353,34 @@ mod tests {
         system_command::set_custom_paths(None, Some(executable));
         let observation = inspect(&device).unwrap();
         println!("{}", serde_json::to_string(&observation).unwrap());
-        assert!(observation.android_sdk.is_some());
+    }
+
+    #[test]
+    #[ignore = "Requires an explicitly selected phone; compares focused and visible protection without changing device state"]
+    fn compare_live_focused_and_visible_protection() {
+        let executable = std::env::var("SCRCPY_PLUS_TEST_ADB").expect("Set SCRCPY_PLUS_TEST_ADB");
+        let device = std::env::var("SCRCPY_PLUS_TEST_DEVICE").expect("Set SCRCPY_PLUS_TEST_DEVICE");
+        system_command::set_custom_paths(None, Some(executable.clone()));
+        let client = AdbClient { path: executable, socket: adb_server::endpoint().unwrap() };
+        let displays = client.query(&["-s", &device, "shell", "dumpsys", "window", "displays"], &mut || false, false).unwrap();
+        let focused = focus(&displays).and_then(|token| {
+            let window = client.query(&["-s", &device, "shell", "dumpsys", "window", token], &mut || false, false).ok()?;
+            let after = client.query(&["-s", &device, "shell", "dumpsys", "window", "displays"], &mut || false, false).ok()?;
+            if focus(&after) != Some(token) { return None; }
+            window_flag(&window, token)
+        });
+        let observation = inspect(&device).unwrap();
+        let dump = client.query(&["-s", &device, "shell", "dumpsys", "window", "visible"], &mut || false, false).unwrap();
+        let blocks = visible_windows(&dump).unwrap_or_default();
+        println!("{}", serde_json::json!({
+            "focused_state": focused.map(|secure| if secure { "secure" } else { "unflagged" }).unwrap_or("unknown"),
+            "manual_state": observation.state, "manual_reason": observation.reason, "android_sdk": observation.android_sdk,
+            "visible_protection": visible_protection(&dump),
+            "visible_secure_flag": blocks.iter().any(|block| block_flag(block) == Some(true)),
+            "visible_biometric": blocks.iter().any(|block| biometric(block)),
+            "selected_app_focused": displays.lines().any(|line| line.trim_start().starts_with("mCurrentFocus=") && line.contains("com.google.android.apps.authenticator2/")),
+            "selected_app_visible": blocks.iter().any(|block| block.lines().next().is_some_and(|line| line.contains("com.google.android.apps.authenticator2/"))),
+            "all_visible_flags_readable": !blocks.is_empty() && blocks.iter().all(|block| block_flag(block).is_some()),
+        }));
     }
 }

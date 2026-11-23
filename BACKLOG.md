@@ -171,9 +171,11 @@ biometric overlays, logical sleep, and physical panel power are separate signals
 
 - [x] Start a manual, read-only **Check protected screen** action directly below
       **Turn off phone screen**, using the existing app's styling. Inspect only
-      the selected device's focused main-display window and return secure flag,
-      unflagged, or unknown. Recheck focus, reject ambiguous/other displays, and
-      discard results after selection changes. It does not change screen power.
+      the selected device's visible main-display windows and biometric overlays
+      using the automatic controller's detector. Return protected, unflagged, or
+      unknown after consistent observations; discard stale-device responses.
+      It does not change screen power. Show explicit progress and checked time,
+      with independently spaced Pause/Resume and Check buttons.
       The owner selected apps that show black video in scrcpy as the first case.
 - [x] Immediately below **Turn off phone screen**, add a dependent, opt-in option:
       **Temporarily turn on phone screen for protected screens**.

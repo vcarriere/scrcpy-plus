@@ -93,9 +93,12 @@ and password helper are not replaced or imported.
    the automatic feature. Closing the mirror ends its monitor. Closing the GUI
    ends automation even if the mirror remains open. Unsupported capabilities or
    unreadable state are reported rather than guessed.
-10. "Check protected screen" remains a manual, read-only focused-window check.
-    It does not change screen power. A missing flag does not rule out other
-    protected surfaces or black-video causes.
+10. "Check protected screen" is a read-only snapshot using the same visible
+    window/fingerprint detector as automatic switching. It shows progress and
+    a checked time. Keep the intended app open on the selected device while
+    checking. The separate Pause/Resume and Check buttons wrap with a clear gap.
+    Checking does not change power. An undetected signal does not rule out
+    protected surfaces or other black-video causes.
 11. Device tabs use compact model names. Verified USB/IP/mDNS connections to the
     same physical device share one tab. Select a tab to see its full connection
     names, state, and chosen path. Copy preserves the complete identifier.

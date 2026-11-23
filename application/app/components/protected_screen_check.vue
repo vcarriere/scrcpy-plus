@@ -1,21 +1,30 @@
 <template>
-    <div class="ml-8 mb-3 space-y-2">
+    <div class="ml-8 mb-3 min-w-0 space-y-2">
         <label class="flex cursor-pointer">
-            <input type="checkbox" class="checkbox checkbox-primary" :checked="modelValue" :disabled="!enabled || running || session" @change="$emit('update:modelValue', $event.target.checked)" />
+            <input type="checkbox" class="checkbox checkbox-primary shrink-0" :checked="modelValue" :disabled="!enabled || running || session" @change="$emit('update:modelValue', $event.target.checked)" />
             <p class="ml-2 text-white">{{ $t('protected_screen_automatic') }}</p>
         </label>
         <p v-if="enabled">{{ $t('protected_screen_description') }}</p>
         <template v-if="session">
             <p aria-live="polite">{{ $t(`screen_auto_${session.state}`) }}</p>
             <p v-if="session.state === 'paused' || session.state === 'error'">{{ $t(`screen_auto_reason_${session.reason}`) }}</p>
-            <button class="btn btn-primary text-white" :disabled="controlling" @click="control">
+        </template>
+        <div class="flex flex-wrap gap-2">
+            <button v-if="session" class="btn btn-primary text-white max-w-full min-h-12 h-auto py-3 whitespace-normal" :disabled="controlling" @click="control">
                 {{ $t(session.state === 'paused' || session.state === 'error' ? 'screen_auto_resume' : 'screen_auto_pause') }}
             </button>
-        </template>
-        <button class="btn btn-primary text-white" :disabled="!enabled || !adb_available || checking || !device" @click="check">
-            {{ $t(checking ? 'loading' : 'protected_screen_check') }}
-        </button>
-        <p v-if="observation" aria-live="polite">{{ $t(`protected_screen_${observation.state}`) }}</p>
+            <button class="btn btn-primary text-white max-w-full min-h-12 h-auto py-3 whitespace-normal" :disabled="!enabled || !adb_available || checking || !device" @click="check">
+                {{ $t(checking ? 'loading' : 'protected_screen_check') }}
+            </button>
+        </div>
+        <div v-if="enabled" class="space-y-2" role="status" aria-live="polite" :aria-busy="checking">
+            <p v-if="checking">{{ $t('protected_screen_checking') }}</p>
+            <template v-else-if="observation">
+                <p class="text-white">{{ $t(`protected_screen_${observation.state}`) }}</p>
+                <p>{{ $t('protected_screen_checked_at', { time: checked_at }) }}</p>
+            </template>
+            <p v-else>{{ $t('protected_screen_check_hint') }}</p>
+        </div>
         <p v-if="error" class="text-error break-words" role="alert">{{ error }}</p>
     </div>
 </template>
@@ -30,7 +39,7 @@ export default {
         return { adb_available, status, refresh };
     },
     data() {
-        return { checking: false, controlling: false, observation: null, error: "", request: 0 }
+        return { checking: false, controlling: false, observation: null, checked_at: "", error: "", request: 0 }
     },
     computed: {
         session() { return this.status.screen_sessions?.find(session => session.device === this.device); }
@@ -57,7 +66,9 @@ export default {
         },
         reset() {
             this.request++;
+            this.checking = false;
             this.observation = null;
+            this.checked_at = "";
             this.error = "";
         },
         async check() {
@@ -66,16 +77,18 @@ export default {
             const device = this.device;
             this.checking = true;
             this.observation = null;
+            this.checked_at = "";
             this.error = "";
             try {
                 const observation = await invoke("inspect_protected_screen", { device });
                 if (request === this.request && device === this.device) {
                     this.observation = { ...observation, state: ["secure", "unflagged", "unknown"].includes(observation.state) ? observation.state : "unknown" };
+                    this.checked_at = new Date().toLocaleTimeString();
                 }
             } catch (e) {
                 if (request === this.request && device === this.device) this.error = String(e);
             } finally {
-                this.checking = false;
+                if (request === this.request) this.checking = false;
             }
         }
     }

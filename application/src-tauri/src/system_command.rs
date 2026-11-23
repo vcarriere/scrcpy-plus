@@ -177,13 +177,6 @@ fn execute(command: &str, args: Vec<&str>, session: bool) -> Result<String, Stri
     Ok(output)
 }
 
-pub fn adb_display_help(device: &str) -> Result<String, String> {
-    let _operation = adb_server::begin(false)?;
-    // Android's display help can exit 255 after printing valid help. Only this
-    // exact read-only help request accepts stdout from an unsuccessful exit.
-    execute_output(&adb_path(), vec!["-s", device, "shell", "cmd", "display", "help"], false).map(|(_, output)| output)
-}
-
 pub fn scrcpy(args: Vec<&str>) -> Result<String, String> {
     let _operation = if args == ["--version"] { None } else { Some(adb_server::begin(false)?) };
     let command = scrcpy_path();

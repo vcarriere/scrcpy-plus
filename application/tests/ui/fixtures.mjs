@@ -47,7 +47,7 @@ export async function mock(page, options = {}) {
             if (command === "inspect_protected_screen") {
                 if (state.screen_fail) throw "Simulated protected-screen query failure";
                 if (state.screen_deferred) return new Promise(resolve => { state.finish_screen = () => resolve(state.screen || { state: "secure" }); });
-                return state.screen || { state: "secure", reason: "focused_window_flag", android_sdk: 37, power_commands: "reset_off" };
+                return state.screen || { state: "secure", reason: "visible_secure_window", android_sdk: 37, power_commands: "not_checked" };
             }
             if (command === "get_adb_status") {
                 if (state.server === "running") state.paused = false;

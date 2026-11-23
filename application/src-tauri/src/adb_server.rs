@@ -424,7 +424,7 @@ mod tests {
         assert!(runtime().0);
         assert!(crate::system_command::adb(vec!["devices"]).is_err());
         assert!(crate::protected_screen::inspect("synthetic-device").is_err());
-        assert!(crate::system_command::adb_display_help("synthetic-device").is_err());
+        assert!(crate::protected_screen::inspect("synthetic-device").is_err());
         assert!(crate::system_command::run_scrcpy(vec!["-s", "synthetic-device", "--turn-screen-off"], true).is_err());
         let mut start = change(true).unwrap();
         start.complete(true);

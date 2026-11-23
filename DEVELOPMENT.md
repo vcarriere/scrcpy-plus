@@ -75,7 +75,7 @@ Set-Location src-tauri
 cargo test --lib
 ```
 
-- Forty-nine Rust tests cover passive protocol queries, a non-ADB endpoint, closed
+- Fifty-two Rust tests cover passive protocol queries, a non-ADB endpoint, closed
   ports, independent endpoints, paused-command/session guards, launch failure,
   unsuccessful exit status, automatic recovery, stale observations around Stop,
   known-peer learning, cache bounds/expiry, local subnet/server restrictions,
@@ -87,8 +87,10 @@ cargo test --lib
   cancellation of an actual owned query subprocess, physical-device grouping,
   identity/transport validation, bounded inventory parsing, ambiguous identities,
   distinct equal-model labels, checked per-route disconnect, filesystem-only
-  executable resolution, missing/deleted overrides, and wrapper non-execution.
-- Thirty-five headless Chromium tests exercise the actual built frontend with synthetic
+  executable resolution, missing/deleted overrides, wrapper non-execution,
+  shared manual/automatic protection signals, stable visible-window snapshots,
+  captured-client deadlines, and cancellation of stalled optional metadata.
+- Forty headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
   offline/unauthorized states, an external restart automatically restoring device
@@ -103,7 +105,9 @@ cargo test --lib
   disambiguators for equal long model names, matching device/body typography,
   narrow/high-scaling layouts, effective executable sources/reset/errors, and
   the affirmative update checkbox with existing preferences and persistence,
-  stable advanced-toggle position/focus, and collapsed-document scroll limits.
+  stable advanced-toggle position/focus, collapsed-document scroll limits,
+  spaced/wrapping screen-action buttons, explicit progress/timestamped results,
+  and independent fresh checks while an older device response remains pending.
   These are simulated backend
   states, not evidence of device-side behavior.
 - `npm run test:adb` is an opt-in real ADB test. Set `SCRCPY_PLUS_TEST_ADB` to the
@@ -321,10 +325,29 @@ before, but automatic switching ends with the GUI. No blanket server shutdown or
 termination of unrelated processes is performed. Native password monitoring must
 reuse this lifecycle/ownership model when item 03 is implemented.
 
-The manual **Check protected screen** action remains a read-only diagnostic of
-the focused window. It returns secure/unflagged/unknown, rechecks focus, and
-discards stale-device responses. An unflagged result is not proof that mirroring
-is allowed. It does not change power or start monitoring.
+The manual **Check protected screen** action is a read-only snapshot using the
+same visible main-display secure-window and SystemUI biometric detector as
+automatic switching. Two relevant window/flag snapshots must agree; changing,
+ambiguous, or unreadable state returns unknown. It captures one ADB executable
+and endpoint, has a seven-second overall budget, and gives optional SDK metadata
+only 250 ms. Display-help discovery is no longer part of this check; the retained
+`power_commands` response field reports `not_checked`. An unflagged result is not
+proof that mirroring is allowed. It does not change power or start monitoring.
+
+The user reported an unflagged Authenticator result. Initial live probes also
+reported clear while Authenticator was neither focused nor visible. After the
+owner confirmed the Pixel was ready with Authenticator open, both the old
+focused detector and the shared visible detector reported protection. The revised
+manual path also returned secure/visible_secure_window/SDK 37. These reads did
+not establish an Authenticator parser false negative; no phone input, power
+change, screenshot, or credential retrieval was performed.
+
+The two screen actions previously touched with zero horizontal spacing in the
+600px layout. A wrapping flex row now provides an 8px gap (10px with larger text)
+and allows multiline labels. Manual checks show a progress message and checked
+time, making a snapshot distinguishable from automatic session status. Changing
+device/availability clears pending UI state; an older reply cannot overwrite or
+clear a newer check's progress. Visible feedback keeps the original app styling.
 
 Opt-in live tests require explicit `SCRCPY_PLUS_TEST_ADB`,
 `SCRCPY_PLUS_TEST_SCRCPY`, and `SCRCPY_PLUS_TEST_DEVICE`. They are excluded from
