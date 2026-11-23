@@ -72,6 +72,7 @@ fn adb_status() -> Value {
   let endpoint = adb_server::endpoint();
   let observed = endpoint.as_ref().map_err(|e| e.clone()).and_then(|socket| adb_server::version(socket));
   let running = observed.as_ref().ok().and_then(|v| *v).is_some();
+  let server_details = if running { endpoint.as_ref().ok().and_then(|socket| adb_server::details(socket).ok().flatten()) } else { None };
   let (paused, changing, sessions) = adb_server::observe(running, revision);
   let state = match changing {
     Some(true) => "starting",
@@ -82,6 +83,7 @@ fn adb_status() -> Value {
     "state": state, "paused": paused, "active_sessions": sessions,
     "endpoint": endpoint.unwrap_or_default(), "path": system_command::adb_path(),
     "protocol_version": observed.as_ref().ok().and_then(|v| *v),
+    "server_details": server_details,
     "error": observed.err()
   })
 }
@@ -89,6 +91,11 @@ fn adb_status() -> Value {
 #[tauri::command]
 async fn get_adb_status() -> Result<Value, String> {
   tauri::async_runtime::spawn_blocking(adb_status).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn get_adb_client() -> Result<Value, String> {
+  tauri::async_runtime::spawn_blocking(system_command::adb_client).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -120,7 +127,7 @@ pub fn run() {
     })
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
-    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy, get_adb_status, control_adb])
+    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

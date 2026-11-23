@@ -1,4 +1,11 @@
 {
+    "adb_selected_executable": "Selected ADB executable",
+    "adb_client_version": "Client version",
+    "adb_server_version": "Running server version",
+    "adb_server_executable": "Running server executable",
+    "adb_details_unavailable": "Not available",
+    "adb_shared_server": "This server can be shared with other apps. Its executable does not identify which app started it.",
+    "adb_different_server": "The running server uses a different ADB executable or version. Start does not replace a running server. Stop also disconnects other apps using it.",
     "adb_advanced_setting": "Show advanced ADB controls",
     "adb_state_checking": "Checking…",
     "adb_state_running": "Running",

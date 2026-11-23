@@ -5,15 +5,19 @@ async function mock(page, options = {}) {
     await page.addInitScript(options => {
         localStorage.setItem("setting.disable_update_check", "true");
         const state = window.adb_test = {
-            server: "running", paused: false, sessions: 0, calls: [], devices: "", fail: false, ...options,
+            server: "running", paused: false, sessions: 0, calls: [], devices: "", fail: false,
+            details: { version: "37.0.3", build: "1234", path: "C:\\SCRCPY+\\adb.exe" },
+            client: { path: "C:\\SCRCPY+\\adb.exe", version: "37.0.3-1234", is_windows: true }, ...options,
         };
         const snapshot = () => ({
             state: state.server, paused: state.paused, active_sessions: state.sessions,
             endpoint: "tcp:localhost:5037", path: "C:\\SCRCPY+\\adb.exe", protocol_version: state.server === "running" ? 41 : null,
+            server_details: state.server === "running" ? state.details : null,
         });
         window.__TAURI_INTERNALS__ = { invoke: async (command, args = {}) => {
             state.calls.push({ command, args });
             if (command === "set_binary_paths") return;
+            if (command === "get_adb_client") return state.client;
             if (command === "get_adb_status") {
                 if (state.server === "running") state.paused = false;
                 return snapshot();
@@ -131,4 +135,31 @@ test("narrow controls fit the current theme without horizontal overflow", async 
     await advanced(page);
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
     await page.screenshot({ path: "../artifacts/adb-controls-narrow-preview.png", fullPage: true });
+});
+
+test("distinguishes selected client from a different running server", async ({ page }) => {
+    await mock(page, { details: { version: "37.0.1", build: "5678", path: "C:\\Another Android Tool\\platform-tools\\adb.exe" } });
+    await advanced(page);
+    await expect(page.getByText("37.0.3-1234", { exact: true })).toBeVisible();
+    await expect(page.getByText("37.0.1-5678", { exact: true })).toBeVisible();
+    await expect(page.getByText("C:\\Another Android Tool\\platform-tools\\adb.exe", { exact: true })).toBeVisible();
+    await expect(page.getByText(/The running server uses a different ADB/)).toBeVisible();
+    expect(await page.evaluate(() => adb_test.calls.filter(call => call.command === "get_adb_client").length)).toBe(1);
+    expect(await page.evaluate(() => adb_test.calls.some(call => call.command === "control_adb"))).toBe(false);
+    await page.setViewportSize({ width: 380, height: 800 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: "../artifacts/adb-server-details-narrow.png", fullPage: true });
+});
+
+test("keeps legacy metadata and unavailable clients separate from server health", async ({ page }) => {
+    await mock(page, { details: null, client: { path: "C:\\Missing Tools\\adb.exe", error: "Could not launch the selected executable" } });
+    await advanced(page);
+    await expect(page.getByRole("status")).toHaveText("Running");
+    await expect(page.getByRole("alert")).toContainText("Could not launch");
+    await expect(page.getByText("Not available", { exact: true })).toHaveCount(3);
+    await expect(page.getByRole("button", { name: "Stop ADB", exact: true })).toBeEnabled();
+    await page.evaluate(() => { adb_test.server = "stopped"; });
+    await expect(page.getByRole("status")).toHaveText("Stopped");
+    await expect(page.getByText("Running server version", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => adb_test.calls.some(call => call.command === "control_adb"))).toBe(false);
 });

@@ -27,6 +27,33 @@ pub fn adb_path() -> String {
     CUSTOM_ADB.lock().unwrap().clone().unwrap_or(default.to_string())
 }
 
+fn parse_adb_version(output: &str) -> Result<serde_json::Value, String> {
+    let protocol = output.lines().find_map(|line| line.strip_prefix("Android Debug Bridge version "));
+    let Some(protocol) = protocol.filter(|value| !value.trim().is_empty()) else {
+        return Err("The selected executable did not report an ADB version.".into());
+    };
+    let version = output.lines().find_map(|line| line.strip_prefix("Version ")).map(str::trim).filter(|value| !value.is_empty());
+    let path = output.lines().find_map(|line| line.strip_prefix("Installed as ")).map(str::trim).filter(|value| !value.is_empty());
+    Ok(serde_json::json!({ "version": version, "protocol_version": protocol.trim(), "path": path }))
+}
+
+pub fn adb_client() -> serde_json::Value {
+    let command = adb_path();
+    let result = execute(&command, vec!["--version"], false).and_then(|output| parse_adb_version(&output));
+    let fallback = if Path::new(&command).components().count() > 1 {
+        std::path::absolute(&command).ok().map(|path| path.to_string_lossy().to_string()).unwrap_or(command.clone())
+    } else { command.clone() };
+    match result {
+        Ok(mut details) => {
+            if details["path"].is_null() { details["path"] = serde_json::json!(fallback); }
+            details["command"] = serde_json::json!(command);
+            details["is_windows"] = serde_json::json!(cfg!(windows));
+            details
+        },
+        Err(error) => serde_json::json!({ "command": command, "path": fallback, "error": error, "is_windows": cfg!(windows) }),
+    }
+}
+
 fn execute(command: &str, args: Vec<&str>, session: bool) -> Result<String, String> {
     let mut cmd = Command::new(&command);
     cmd.args(&args);
@@ -124,5 +151,16 @@ mod tests {
         #[cfg(unix)]
         let result = execute("sh", vec!["-c", "exit 17"], false);
         assert!(result.unwrap_err().contains("17"));
+    }
+
+    #[test]
+    fn client_release_is_separate_from_protocol_and_keeps_paths_with_spaces() {
+        let parsed = parse_adb_version("Android Debug Bridge version 1.0.41\r\nVersion 37.0.3-1234\r\nInstalled as C:\\Test Tools\\adb.exe\r\n").unwrap();
+        assert_eq!(parsed["version"], "37.0.3-1234");
+        assert_eq!(parsed["protocol_version"], "1.0.41");
+        assert_eq!(parsed["path"], "C:\\Test Tools\\adb.exe");
+        assert!(parse_adb_version("not adb").is_err());
+        let old = parse_adb_version("Android Debug Bridge version 1.0.41\n").unwrap();
+        assert!(old["version"].is_null());
     }
 }

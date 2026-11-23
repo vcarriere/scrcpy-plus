@@ -28,7 +28,7 @@ new backend code.
       status easy to see, with detailed controls in Advanced. Include a text
       label or accessible description so status does not depend on color alone;
       reflect transitions and errors without implying a device is connected.
-- [ ] Show the selected ADB path and client version; include server version and
+- [x] Show the selected ADB path and client version; include server version and
       endpoint when available. Explain conflicts with a server started by another
       tool instead of presenting every ADB process as ours.
 - [x] Add **Start ADB** (`start-server`) and **Stop ADB** (the equivalent

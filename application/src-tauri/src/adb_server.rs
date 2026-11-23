@@ -4,6 +4,7 @@ use std::net::{ TcpStream, ToSocketAddrs };
 use std::net::SocketAddr;
 use std::sync::Mutex;
 use std::time::Duration;
+use serde::Serialize;
 
 const TIMEOUT: Duration = Duration::from_secs(2);
 static RUNTIME: Mutex<Runtime> = Mutex::new(Runtime::new());
@@ -109,12 +110,12 @@ pub fn endpoint() -> Result<String, String> {
     Ok(format!("tcp:{}:{}", if host.is_empty() { "localhost" } else { &host }, port))
 }
 
-fn exchange(stream: &mut (impl Read + Write), request: &str) -> Result<String, String> {
+fn exchange(stream: &mut (impl Read + Write), request: &str) -> Result<Vec<u8>, String> {
     stream.write_all(format!("{:04x}{}", request.len(), request).as_bytes()).map_err(|e| e.to_string())?;
     let mut reply = [0; 4];
     stream.read_exact(&mut reply).map_err(|e| e.to_string())?;
     if &reply != b"OKAY" && &reply != b"FAIL" { return Err("The endpoint did not reply as an ADB server.".into()); }
-    if &reply == b"OKAY" && request == "host:kill" { return Ok(String::new()); }
+    if &reply == b"OKAY" && request == "host:kill" { return Ok(Vec::new()); }
     let failed = &reply == b"FAIL";
     stream.read_exact(&mut reply).map_err(|e| e.to_string())?;
     let length = usize::from_str_radix(std::str::from_utf8(&reply).map_err(|_| "Invalid ADB reply")?, 16)
@@ -123,7 +124,7 @@ fn exchange(stream: &mut (impl Read + Write), request: &str) -> Result<String, S
     let mut payload = vec![0; length];
     stream.read_exact(&mut payload).map_err(|e| e.to_string())?;
     if failed { return Err("ADB rejected the server query.".into()); }
-    String::from_utf8(payload).map_err(|_| "Invalid ADB reply text".into())
+    Ok(payload)
 }
 
 #[cfg(windows)]
@@ -170,7 +171,7 @@ fn local_listener(address: SocketAddr) -> Result<bool, String> {
     Err("The local TCP table kept changing. Try again.".into())
 }
 
-pub fn query(socket: &str, request: &str) -> Result<Option<String>, String> {
+fn query_bytes(socket: &str, request: &str) -> Result<Option<Vec<u8>>, String> {
     if let Some(address) = socket.strip_prefix("tcp:") {
         let address = if address.parse::<u16>().is_ok() { format!("localhost:{}", address) } else { address.to_string() };
         let mut addresses: Vec<_> = address.to_socket_addrs().map_err(|e| e.to_string())?.collect();
@@ -211,6 +212,61 @@ pub fn query(socket: &str, request: &str) -> Result<Option<String>, String> {
         }
     }
     Err("This ADB server socket is not supported by the status controls. Select a TCP endpoint.".into())
+}
+
+pub fn query(socket: &str, request: &str) -> Result<Option<String>, String> {
+    query_bytes(socket, request)?.map(|payload| String::from_utf8(payload).map_err(|_| "Invalid ADB reply text".into())).transpose()
+}
+
+#[derive(Debug, Default, PartialEq, Serialize)]
+pub struct Details {
+    pub version: Option<String>,
+    pub build: Option<String>,
+    pub path: Option<String>,
+}
+
+fn varint(input: &mut &[u8]) -> Result<u64, String> {
+    let mut value = 0;
+    for shift in (0..70).step_by(7) {
+        let Some((&byte, rest)) = input.split_first() else { return Err("Incomplete ADB server details".into()); };
+        *input = rest;
+        if shift == 63 && byte > 1 { return Err("Invalid ADB server detail length".into()); }
+        value |= u64::from(byte & 127) << shift;
+        if byte & 128 == 0 { return Ok(value); }
+    }
+    Err("Invalid ADB server details".into())
+}
+
+// Read only the three public build/path fields in AdbServerStatus. Other fields
+// can contain key-store locations and are skipped rather than sent to the GUI.
+fn parse_details(mut input: &[u8]) -> Result<Details, String> {
+    if input.len() > 4096 { return Err("ADB server details are too large".into()); }
+    let mut details = Details::default();
+    while !input.is_empty() {
+        let tag = varint(&mut input)?;
+        let field = tag >> 3;
+        if field == 0 || field > 0x1fffffff { return Err("Invalid ADB server detail field".into()); }
+        let length = match tag & 7 {
+            0 => { varint(&mut input)?; continue; },
+            1 => 8,
+            2 => usize::try_from(varint(&mut input)?).map_err(|_| "Invalid ADB server detail length")?,
+            5 => 4,
+            _ => return Err("Unsupported ADB server detail field".into()),
+        };
+        if length > input.len() { return Err("Incomplete ADB server details".into()); }
+        let (value, rest) = input.split_at(length);
+        input = rest;
+        if tag & 7 == 2 && (5..=7).contains(&field) {
+            let text = std::str::from_utf8(value).map_err(|_| "Invalid ADB server detail text")?;
+            let value = (!text.is_empty()).then(|| text.to_string());
+            match field { 5 => details.version = value, 6 => details.build = value, 7 => details.path = value, _ => {} }
+        }
+    }
+    Ok(details)
+}
+
+pub fn details(socket: &str) -> Result<Option<Details>, String> {
+    query_bytes(socket, "host:server-status")?.map(|payload| parse_details(&payload)).transpose()
 }
 
 pub fn version(socket: &str) -> Result<Option<u32>, String> {
@@ -258,7 +314,47 @@ mod tests {
         let address = format!("tcp:{}", listener.local_addr().unwrap());
         drop(listener);
         assert_eq!(version(&address).unwrap(), None);
+        assert_eq!(details(&address).unwrap(), None);
         assert_eq!(version(&address).unwrap(), None);
+    }
+
+    #[test]
+    fn reads_server_build_details_and_ignores_private_or_future_fields() {
+        let payload = b"\x08\x04\x2a\x0637.0.3\x32\x041234\x3a\x08/opt/adb\x42\x01\xff\x60\x01\x6a\x06secret\xa5\x01\0\0\0\0";
+        let expected = Details { version: Some("37.0.3".into()), build: Some("1234".into()), path: Some("/opt/adb".into()) };
+        assert_eq!(parse_details(payload).unwrap(), expected);
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = format!("tcp:{}", listener.local_addr().unwrap());
+        let handle = thread::spawn(move || {
+            let (mut stream, _) = listener.accept().unwrap();
+            let mut request = [0; 22];
+            stream.read_exact(&mut request).unwrap();
+            assert_eq!(&request, b"0012host:server-status");
+            stream.write_all(format!("OKAY{:04x}", payload.len()).as_bytes()).unwrap();
+            stream.write_all(payload).unwrap();
+        });
+        assert_eq!(details(&address).unwrap(), Some(expected));
+        handle.join().unwrap();
+    }
+
+    #[test]
+    fn rejects_malformed_metadata_without_reinterpreting_it_as_a_version() {
+        for payload in [b"\x2a\x06bad".as_slice(), b"\x2a\x01\xff", b"\0", b"\x0b", b"\x2a\xff\xff\xff\xff\xff\xff\xff\xff\xff\x7f"] {
+            assert!(parse_details(payload).is_err());
+        }
+        assert_eq!(parse_details(b"\x08\x01").unwrap(), Details::default());
+        assert!(parse_details(&vec![0; 4097]).is_err());
+    }
+
+    #[test]
+    #[ignore = "Requires an existing local ADB server; does not launch a client"]
+    fn reads_live_server_details_passively() {
+        let socket = std::env::var("SCRCPY_PLUS_TEST_ADB_SOCKET").expect("Set SCRCPY_PLUS_TEST_ADB_SOCKET");
+        assert!(version(&socket).unwrap().is_some());
+        let observed = details(&socket).unwrap().expect("Existing server required");
+        assert!(observed.version.is_some());
+        assert!(observed.path.is_some());
+        println!("Server release: {}; build: {}; executable path available: {}", observed.version.unwrap(), observed.build.unwrap_or_default(), observed.path.is_some());
     }
 
     #[test]

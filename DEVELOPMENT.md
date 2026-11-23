@@ -28,7 +28,16 @@ the development machine timed out connecting to some unused local ports instead
 of returning a refusal. A listening non-ADB service is reported as unavailable,
 not as a running ADB server. Explicit socket settings are respected. TCP and Unix
 filesystem sockets are supported; other socket types report an unsupported error.
-The displayed server number is the protocol version, not a Platform-Tools build.
+Advanced controls show the selected client's effective executable path and
+release/build separately from the running server's executable and release/build,
+the server endpoint, and the protocol version. The client runs only `--version`
+when the panel opens or its selection changes. Server build details use the
+passive `host:server-status` protocol request, never an ADB client invocation.
+Unsupported legacy details remain unavailable without changing Running status.
+Only the public version, build, and executable fields are decoded; key-store/log
+locations are discarded. A mismatch explains that Start does not replace a
+running server and Stop affects other apps using it. The app never claims it
+owns a server merely because its binary matches the selected executable.
 
 Commands now report launch failures, unsuccessful exits, and timeouts. Short
 commands have a ten-second bound and bounded stdout capture; long mirror sessions
@@ -66,17 +75,20 @@ Set-Location src-tauri
 cargo test --lib
 ```
 
-- Seventeen Rust tests cover passive protocol queries, a non-ADB endpoint, closed
+- Twenty Rust tests cover passive protocol queries, a non-ADB endpoint, closed
   ports, independent endpoints, paused-command/session guards, launch failure,
   unsuccessful exit status, automatic recovery, stale observations around Stop,
   known-peer learning, cache bounds/expiry, local subnet/server restrictions,
-  discovery failures, request throttling, and the mDNS wire question.
-- Seven headless Chromium tests exercise the actual built frontend with synthetic
+  discovery failures, request throttling, the mDNS wire question, binary server
+  metadata with unknown/private fields, malformed metadata, and client release
+  parsing distinct from protocol version.
+- Nine headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
   offline/unauthorized states, an external restart automatically restoring device
   discovery and the enabled Stop control without an extra Start request,
-  and a narrow layout. These are simulated backend
+  client/server version/path mismatches, unavailable legacy details, a missing
+  client alongside a healthy server, and a narrow layout. These are simulated backend
   states, not evidence of device-side behavior.
 - `npm run test:adb` is an opt-in real ADB test. Set `SCRCPY_PLUS_TEST_ADB` to the
   full path of an existing ADB executable before running it. It uses temporary
@@ -89,6 +101,10 @@ cargo test --lib
   a second server could not bind an occupied endpoint, and stopping one left the
   other responsive. The shared endpoint's protocol response stayed unchanged.
   Different ADB versions sharing a server have not been tested.
+- An ignored passive metadata test accepts `SCRCPY_PLUS_TEST_ADB_SOCKET`. It
+  passed against the existing local 37.0.3 server, reading its actual release,
+  build, and executable through the native protocol with the server process
+  unchanged. It does not launch an ADB client or start/stop the server.
 - Two ignored native mDNS tests require explicit `SCRCPY_PLUS_TEST_ADB` and
   `SCRCPY_PLUS_TEST_MDNS_CACHE` settings. The latter must name an isolated local
   test-cache directory. `probe_known_connected_peer` learns an already connected
@@ -180,6 +196,9 @@ references (not copied implementations):
   including `host:version` and `host:kill`.
 - [ADB command-line documentation](https://android.googlesource.com/platform/packages/modules/adb/+/refs/heads/main/docs/user/adb.1.md),
   including server endpoints and `--one-device`.
+- [ADB host status schema](https://android.googlesource.com/platform/packages/modules/adb/+/refs/heads/main/proto/adb_host.proto),
+  used as the protocol reference for version/build/executable field numbers.
+  The bounded decoder is original fork code; no generated AOSP source is copied.
 - Microsoft's [GetTcpTable2](https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-gettcptable2)
   and [GetTcp6Table2](https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-gettcp6table2).
 - [windows-sys / windows-rs](https://github.com/microsoft/windows-rs), Microsoft

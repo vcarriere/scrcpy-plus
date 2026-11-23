@@ -1,4 +1,11 @@
 {
+    "adb_selected_executable": "Eseguibile ADB selezionato",
+    "adb_client_version": "Versione del client",
+    "adb_server_version": "Versione del server in esecuzione",
+    "adb_server_executable": "Eseguibile del server in esecuzione",
+    "adb_details_unavailable": "Non disponibile",
+    "adb_shared_server": "Questo server può essere condiviso con altre app. Il suo eseguibile non indica quale app lo ha avviato.",
+    "adb_different_server": "Il server in esecuzione usa un eseguibile o una versione ADB differente. Avvia non sostituisce un server in esecuzione. Arresta disconnette anche le altre app che lo usano.",
     "adb_advanced_setting": "Mostra i controlli ADB avanzati",
     "adb_state_checking": "Verifica…",
     "adb_state_running": "In esecuzione",
