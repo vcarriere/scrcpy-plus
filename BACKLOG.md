@@ -366,6 +366,10 @@ device IDs, pairing material, and raw private logs out of the public repository.
 
 ### 15. Use an affirmative Check for updates setting
 
+- [ ] Make the setting cover **both ADB and scrcpy updates**, in addition to the
+      existing SCRCPY+ app update check. Use the official Google Platform-Tools
+      source for ADB and official Genymobile releases for scrcpy, with separate
+      installed/available versions and results for each component.
 - [ ] Rename **Do not check for updates** to **Check for updates** and invert
       the checkbox/storage logic to match: checked enables checks, unchecked
       disables them. A fresh profile should have the setting checked by default.
@@ -374,7 +378,9 @@ device IDs, pairing material, and raw private logs out of the public repository.
       who disabled update checks must keep them disabled after the wording change.
 - [ ] Update every read/write path and translation consistently. Verify new-profile
       defaults, both legacy values, checkbox changes, and persistence after restart;
-      disabled checks must not issue release-check requests.
+      disabled automatic checks must not issue release-check requests for any
+      covered component. Keep checking separate from installation: this checkbox
+      must not silently replace binaries or enable automatic installation.
 
 ### 16. Keep the viewport steady when toggling Advanced ADB controls
 
