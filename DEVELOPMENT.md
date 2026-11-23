@@ -225,8 +225,8 @@ normal checks:
   through SDL's offscreen dummy/software renderer. Three complete physical
   On/Off cycles each retained advancing video during subsequent Settings/Home
   animations. FPS observations after each switch exclude the initial two
-  seconds; no video frames or recordings are saved. This does not exercise the
-  owner's normal desktop GPU renderer, so the new preview still needs that retry.
+  seconds; no video frames or recordings are saved. This offscreen test does not
+  exercise the owner's normal desktop GPU renderer.
 - `screen_power::tests::live_automatic_session`, with a bounded duration, ran the
   actual controller. Authenticator entry turned the panel On; returning Home
   restored Off. Wi-Fi sharing's visible fingerprint prompt also turned it On;
@@ -237,7 +237,8 @@ normal checks:
   again with video enabled at 1440x3120. Both automatic panel transitions were
   observed, followed by advancing decoded/rendered video during Settings/Home
   animations after screen-off. The earlier Wi-Fi biometric panel test remains
-  valid for detection; the new desktop-renderer retry must cover that case too.
+  valid for detection. The owner subsequently retried both requested cases in
+  preview v7 and confirmed that both mirrored-window cases stay responsive.
 - The fixture options `SCRCPY_PLUS_TEST_RETURN_HOME=1` and
   `SCRCPY_PLUS_TEST_CANCEL_BIOMETRIC=1` perform guarded Home/Back test transitions
   only from the expected app/prompt. They are test-only and are not part of the
@@ -247,6 +248,10 @@ normal checks:
 
 The live passes used ADB 37.0.3 and scrcpy 5.0.1 on the selected phone. Cross-build
 and additional vendor/DRM cases are not established by these results.
+Preview v7 was built from clean code commit `708d5b4`; all 18 artifact hashes and
+the Windows x64 GUI format were verified. This later documentation-only
+acceptance update does not change that tested executable. The installed app and
+existing helper remain unchanged.
 
 ## Recurring wireless discovery investigation and recovery
 

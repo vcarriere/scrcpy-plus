@@ -211,9 +211,11 @@ biometric overlays, logical sleep, and physical panel power are separate signals
       physical displays, keyguard-specific biometric variants, and protected
       surfaces without an observable secure-window flag. Unsupported cases must
       remain explicit rather than using black pixels as proof.
-- [ ] Confirm on the owner's normal desktop renderer that the v7 power-control
-      change resolves the reported v6 frozen mirror. Three full-resolution
-      offscreen video On/Off cycles passed; a panel-only test is insufficient.
+- [x] Confirm on the owner's normal desktop renderer that the v7 power-control
+      change resolves the reported v6 frozen mirror. The owner retried both
+      Authenticator/Home and fingerprint-prompt/cancellation and confirmed both
+      mirrored-window cases stay responsive. Three full-resolution offscreen
+      video On/Off cycles also passed; a panel-only test is insufficient.
 
 Acceptance: demonstrate supported entry/exit detection and panel restoration
 without repeated toggling or conflicts with re-unlock. Record separately whether
@@ -228,7 +230,8 @@ cancellable queries. The original panel-only checks passed both requested cases
 with ADB 37.0.3 and scrcpy 5.0.1. The revised power path also passed three
 full-resolution offscreen video cycles and an automatic Authenticator/Home
 transition with video continuing afterward. No video is saved; the feature does
-not remove Android's mirror blocking. Desktop-renderer acceptance remains open.
+not remove Android's mirror blocking. The owner also confirmed both v7 desktop
+cases stay responsive after retrying the screen switches.
 
 ## Supporting fixes found while inspecting upstream
 
