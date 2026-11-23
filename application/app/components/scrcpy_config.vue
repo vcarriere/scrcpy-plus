@@ -2,6 +2,7 @@
     <div class="card bg-base-200 w-full mb-8">
         <div class="card-body">
             <p class="card-title text-white">SCRCPY</p>
+            <p v-if="launch_error" class="text-error break-words" role="alert">{{ launch_error }}</p>
 
             <p class="mt-8 text-white">{{ $t('launch_options') }}</p>
             <label v-for="option in basic_options" :key="option.arg" class="flex cursor-pointer">
@@ -84,7 +85,7 @@
                 </div>
             </div>
 
-            <button class="btn btn-primary text-white mt-16" :disabled="running[device]" @click="start_scrcpy">
+            <button class="btn btn-primary text-white mt-16" :disabled="running[device] || !adb_available" @click="start_scrcpy">
                 <icon name="play" size="20x20" />
                 <span>{{ $t('start') }}</span>
             </button>
@@ -101,11 +102,13 @@ export default {
         // Shared state so running sessions survive navigating between pages
         const running = useState("scrcpy_running", () => ({}));
         const bitrate = useState("scrcpy_bitrate", () => 8);
-        return { running, bitrate };
+        const { available: adb_available } = useAdbStatus();
+        return { running, bitrate, adb_available };
     },
     data() {
         return {
             active_args: [],
+            launch_error: "",
             custom_flags: "",
             custom_window_name: false,
             window_title: "",
@@ -223,6 +226,8 @@ export default {
             if (typeof selected === "string") this.record_path = selected;
         },
         async start_scrcpy() {
+            if (!this.adb_available) return;
+            this.launch_error = "";
             let scrcpy_start_args = ["-s", this.device];
 
             scrcpy_start_args.push(...this.active_args);
@@ -253,7 +258,7 @@ export default {
             try {
                 await invoke("run_scrcpy", { args: scrcpy_start_args });
             } catch (e) {
-                console.error("Failed to start scrcpy", e);
+                this.launch_error = String(e);
             } finally {
                 this.running[device] = false;
             }

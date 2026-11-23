@@ -1,7 +1,9 @@
 # SCRCPY+ additions and fixes
 
-Started November 23, 2026. This is a planning backlog; none of these items is
-implemented in this fork yet. Priorities below are proposed implementation order.
+Started November 23, 2026. Implementation has started on branch
+`codex/adb-controls`; checked items describe source work with the verification
+and limitations recorded in [DEVELOPMENT.md](DEVELOPMENT.md). The installed app
+has not been replaced. Priorities below are proposed implementation order.
 
 Fork: [vcarriere/scrcpy-plus](https://github.com/vcarriere/scrcpy-plus).
 Upstream: [Frontesque/scrcpy-plus](https://github.com/Frontesque/scrcpy-plus),
@@ -16,12 +18,12 @@ and owner-specific password helper remain separate from this new checkout.
 Priority: first. Feasibility: supported ADB operations; status and lifecycle need
 new backend code.
 
-- [ ] Add an **Advanced** setting that reveals an **ADB** management section.
+- [x] Add an **Advanced** setting that reveals an **ADB** management section.
       Keep the normal launch page simple.
-- [ ] Show whether the host ADB server is **Running**, **Stopped**, **Starting**,
+- [x] Show whether the host ADB server is **Running**, **Stopped**, **Starting**,
       **Stopping**, or **Unavailable / Error**. Distinguish an installed ADB
       executable from a running server and from connected/authorized devices.
-- [ ] Add a compact visual running/stopped indicator beside the ADB label, using
+- [x] Add a compact visual running/stopped indicator beside the ADB label, using
       a dot, square, or badge that fits the app's existing style. Keep the basic
       status easy to see, with detailed controls in Advanced. Include a text
       label or accessible description so status does not depend on color alone;
@@ -29,16 +31,18 @@ new backend code.
 - [ ] Show the selected ADB path and client version; include server version and
       endpoint when available. Explain conflicts with a server started by another
       tool instead of presenting every ADB process as ours.
-- [ ] Add **Start ADB** (`start-server`) and **Stop ADB** (`kill-server`), with
+- [x] Add **Start ADB** (`start-server`) and **Stop ADB** (the equivalent
+      `host:kill` server request), with
       progress, bounded timeouts, useful errors, and disabled duplicate actions.
-- [ ] Probe status without starting or restarting ADB. Evaluate a direct ADB
+- [x] Probe status without starting or restarting ADB. Use a direct ADB
       server protocol query to the configured endpoint; do not use `adb devices`
       as a supposedly passive status probe. Respect explicit socket/port settings.
-- [ ] Make Stop persist for the current app session: pause device polling,
-      reconnects, and authentication/power monitors before stopping. Do not
-      silently restart it on the next refresh. An explicit Start or launch action
-      can offer to resume normal operation.
-- [ ] Explain in the Stop action that a shared server may also disconnect Android
+- [x] Make Stop persist for the current app session: require this app's current
+      scrcpy sessions and ADB operations to finish, pause device polling, and block
+      new device commands. Do not silently restart on the next refresh. Explicit
+      Start resumes operation. Future native authentication/power monitors must
+      use the same lifecycle gate.
+- [x] Explain in the Stop action that a shared server may also disconnect Android
       Studio, other scrcpy sessions, and other tools. Do not stop an unrelated
       server automatically when closing SCRCPY+.
 
@@ -198,10 +202,10 @@ Italian, and Japanese locale files, and the session lifecycle from items 03/06.
 
 ### 06. Preserve process results and own the real session lifecycle
 
-- [ ] `system_command::execute` currently returns only stdout, discards stderr
-      and exit status, and returns an empty string for launch failure.
-      `run_scrcpy` consequently cannot report an ordinary failed launch correctly.
-      Return typed success/failure results with bounded, redacted diagnostics.
+- [x] Replace stdout-only command results with typed success/failure results.
+      Report unsuccessful launches, nonzero exits, and short-command timeouts;
+      bound captured stdout and avoid accumulating long mirror-session output.
+      Keep diagnostics coarse rather than echoing potentially sensitive arguments.
 - [ ] Add session identifiers, actual child-process ownership, exit notifications,
       and cancellation so authentication/power tasks cannot outlive their session.
       Avoid holding unbounded captured output for long-running sessions.
@@ -222,11 +226,10 @@ failure in the installed app. Fold the fixes into item 02 where practical.
 
 ### 08. Keep device state separate from daemon state
 
-- [ ] `devices.vue` currently refreshes with `adb devices` every five seconds and
-      infers unauthorized status from missing device properties. Parse explicit
+- [x] Replace the inference of unauthorized status from missing properties with explicit
       `device`, `offline`, and `unauthorized` states and expose them separately
       from whether the ADB server is running.
-- [ ] Gate all refresh/reconnect paths on the intentional-stop state from item 01,
+- [x] Gate all refresh/reconnect paths on the intentional-stop state from item 01,
       including page remounts. Avoid overlapping slow refreshes.
 
 ## General bug review and fixes
@@ -310,6 +313,44 @@ Source starting point for items 10–11:
 `application/app/components/devices.vue`, which currently labels device tabs with
 the raw ADB selector and requests device properties per selected transport.
 
+## Additional ADB reliability work
+
+### 12. Test multiple ADB processes and servers
+
+- [x] Distinguish transient ADB clients from a listening server, and test multiple
+      simultaneous clients sharing one server.
+- [x] Test two real servers on separate isolated loopback ports. Verify repeated
+      Start reuses an existing server and a second server cannot bind the same
+      endpoint. Verify stopping one endpoint leaves the other responsive.
+- [x] Isolate test keys, suppress automatic device connections, clean up only
+      test-owned processes, and leave the shared default server running.
+- [ ] Extend coverage to different ADB versions and explicit custom/remote socket
+      configurations, including version-mismatch restart behavior.
+
+The initial real test passed with ADB 37.0.3; see `npm run test:adb` and the
+development notes. It does not establish compatibility between different builds.
+
+### 13. Investigate recurring wireless/mDNS discovery loss
+
+Priority: early reliability work. The owner reported a second occurrence on
+November 23, 2026. ADB was running with mDNS enabled but listed neither devices nor
+mDNS services. A direct connection to the phone's current endpoint worked and
+verified the enrolled identity; the server was not restarted.
+
+- [ ] Reproduce the loss and distinguish a stopped daemon, an offline/unauthorized
+      transport, an obsolete wireless endpoint, and missing mDNS advertisements.
+- [ ] Investigate phone advertising, network multicast forwarding, host filtering,
+      and ADB discovery using bounded diagnostics. The initial multicast/unicast
+      service queries received no replies; the root cause is still unconfirmed.
+- [ ] Add clear connection/discovery diagnostics and a recovery path in the app.
+      Consider identity-checked reconnects through known current paths; do not
+      treat a changing IP/port as physical device identity or scan arbitrary ports.
+- [ ] Verify repeated disconnect/reconnect and endpoint changes, and ensure any
+      recovery respects intentional Stop and other tools sharing the server.
+
+Manual reconnection is a recovery, not a completed fix. Keep personal addresses,
+device IDs, pairing material, and raw private logs out of the public repository.
+
 ## Delivery order and verification
 
 Begin the bug review (09) before feature work; carry its confirmed fixes through
@@ -317,6 +358,7 @@ the relevant steps below and repeat affected checks as features are added.
 
 1. ADB status/controls, polling semantics, and typed process/session results
    (01, 06, 08), with device labels and connection grouping (10, 11).
+   Include multiple-server tests (12) and investigate recurring discovery loss (13).
 2. Independent ADB update staging, activation, rollback, and override preservation
    (02, 07).
 3. Native password parity with the existing helper (03).
@@ -325,7 +367,8 @@ the relevant steps below and repeat affected checks as features are added.
 Use synthetic credentials and isolated ADB endpoints for automated checks. Keep
 device-specific testing explicit. Before changing code, recheck official stable
 toolchain/dependency releases and update in-scope pins/lockfiles where compatible.
-This documentation-only fork does not change dependency versions or operate ADB.
+The initial implementation updates in-scope dependencies and runs isolated ADB
+tests; it does not install the fork over the owner's existing application.
 
 For UI work, preserve existing branding and layout; keep advanced controls out of
 the normal path, place the screen option beside its parent, and make state and

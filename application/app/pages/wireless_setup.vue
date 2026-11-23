@@ -1,5 +1,7 @@
 <template>
     <div class="p-8">
+        <p v-if="!adb_available" class="mb-4">{{ $t('adb_paused') }}</p>
+        <p v-if="operation_error" class="text-error break-words mb-4" role="alert">{{ operation_error }}</p>
 
         <!--   Header   -->
         <div class="card bg-base-200 w-full mb-8">
@@ -25,7 +27,7 @@
 
                 <div class="card-actions justify-end">
                     <button class="btn" rounded :disabled="pairingLoading" @click="step++">{{ $t('skip') }}</button>
-                    <button class="btn btn-primary" :loading="pairingLoading" @click="pair">{{ $t('connect') }}</button>
+                    <button class="btn btn-primary" :disabled="pairingLoading || !adb_available" @click="pair">{{ $t('connect') }}</button>
                 </div>
 
             </div>
@@ -39,7 +41,7 @@
 
                 <div class="card-actions justify-end">
                     <button class="btn" rounded :disabled="pairingLoading" @click="step--">{{ $t('back') }}</button>
-                    <button class="btn btn-primary" :loading="pairingLoading" @click="connect">{{ $t('connect') }}</button>
+                    <button class="btn btn-primary" :disabled="pairingLoading || !adb_available" @click="connect">{{ $t('connect') }}</button>
                 </div>
 
             </div>
@@ -66,9 +68,15 @@
 <script>
 import { invoke } from "@tauri-apps/api/core";
 export default {
+    setup() {
+        const { available: adb_available } = useAdbStatus();
+        return { adb_available };
+    },
     data() {
         return {
             notice: null,
+            operation_error: "",
+            pairingLoading: false,
             step: 0,
             connectingLoading: false,
             pair_ip_port: "",
@@ -84,30 +92,46 @@ export default {
 
     methods: {
         async pair() {
+            if (!this.adb_available || this.pairingLoading) return;
             const ip = document.getElementById("pair_ip_port").value;
             const pair_code = document.getElementById("pair_code").value;
             if (ip == "" || pair_code == "") return; // Ensure No Error
 
-            const data = await invoke("exec_adb", { args: ["pair", ip, pair_code] });
-            console.log(data);
-            this.notice = data;
-            if (data.includes("Successfully")) return this.step++;
+            this.pairingLoading = true;
+            this.operation_error = "";
+            try {
+                const data = await invoke("exec_adb", { args: ["pair", ip, pair_code] });
+                this.notice = data;
+                if (data.includes("Successfully")) this.step++;
+            } catch (e) {
+                this.operation_error = String(e);
+            } finally {
+                this.pairingLoading = false;
+            }
         },
 
         async connect() {
+            if (!this.adb_available || this.pairingLoading) return;
             const ip = this.connect_ip_port.trim();
             if (ip == "") return; // Ensure No Error
 
-            const data = await invoke("exec_adb", { args: ["connect", ip] });
-            console.log(data);
-            this.notice = data;
-            if (data.includes("connected")) {
-                localStorage.setItem("scrcpyplus.last_ip_port", ip);
-                this.step++;
-                setTimeout(() => {
-                    this.$router.go(-1)
-                }, 2000)
-            };
+            this.pairingLoading = true;
+            this.operation_error = "";
+            try {
+                const data = await invoke("exec_adb", { args: ["connect", ip] });
+                this.notice = data;
+                if (data.includes("connected")) {
+                    localStorage.setItem("scrcpyplus.last_ip_port", ip);
+                    this.step++;
+                    setTimeout(() => {
+                        this.$router.go(-1)
+                    }, 2000)
+                };
+            } catch (e) {
+                this.operation_error = String(e);
+            } finally {
+                this.pairingLoading = false;
+            }
         }
     }
 }

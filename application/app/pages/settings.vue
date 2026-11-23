@@ -12,6 +12,8 @@
             </div>
         </div>
 
+        <adb_controls v-if="advanced_adb" />
+
         <!--   Content   -->
         <div class="card bg-base-200 w-full mb-8">
             <div class="card-body">
@@ -27,10 +29,10 @@
                     <span>{{ $t('translation_credits_value') }}</span>
                 </p>
 
-                <div class="mt-8 flex" v-for="item, i in settings">
+                <label class="mt-8 flex cursor-pointer" v-for="item, i in settings">
                     <input type="checkbox" class="toggle checkbox-primary mr-2" @change="updateSetting(item.key, $event)" :checked="item.checked" />
                     <p>{{ $t(item.title) }}</p>
-                </div>
+                </label>
             </div>
         </div>
 
@@ -64,9 +66,11 @@ export default {
         return {
             settings: [
                 { key: "setting.disable_update_check", title: "dnc_updates" },
-                { key: "setting.save_scrcpy_config",   title: "rscrcpy_config"  }
+                { key: "setting.save_scrcpy_config",   title: "rscrcpy_config"  },
+                { key: "setting.advanced_adb", title: "adb_advanced_setting" }
             ],
             is_windows: false,
+            advanced_adb: localStorage.getItem("setting.advanced_adb") === "true",
             binaries: [
                 { key: "scrcpy_path", title: "scrcpy_executable" },
                 { key: "adb_path",    title: "adb_executable" }
@@ -81,6 +85,7 @@ export default {
     methods: {
         updateSetting(key, event) {
             localStorage.setItem(key, event.target.checked);
+            if (key === "setting.advanced_adb") this.advanced_adb = event.target.checked;
             console.log(key, event.target.checked);
         },
         async apply_binary_paths() {

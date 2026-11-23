@@ -51,7 +51,7 @@ export default {
             const output = await invoke("exec_adb", { args: ["--version"] });
             this.missing = !output || !output.toLowerCase().includes("android debug bridge");
         } catch (e) {
-            console.warn("ADB check failed", e);
+            this.missing = true;
         }
     }
 }

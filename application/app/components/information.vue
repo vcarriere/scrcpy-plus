@@ -4,7 +4,8 @@
             <!--   Version Information   -->
             <p class="card-title"><span class="font-bold">SCRCPY+</span> <span>{{ version.scrcpy_plus }}</span></p>
             <p><span class="font-bold">SCRCPY</span>  <span>{{ version.scrcpy }}</span></p>
-            <p><span class="font-bold">ADB</span>  <span>{{ version.adb }}</span></p>
+            <p class="flex flex-wrap items-center gap-x-2 gap-y-1"><span class="font-bold">ADB</span> <span>{{ version.adb }}</span> <adb_status class="ml-auto text-sm" /></p>
+            <p v-if="status.paused" class="text-sm">{{ $t('adb_paused') }} <NuxtLink class="link" to="/settings">{{ $t('settings') }}</NuxtLink></p>
 
             <!--   Buttons   -->
             <div class="card-actions">
@@ -26,6 +27,10 @@
 <script>
 import { invoke } from "@tauri-apps/api/core";
 export default {
+    setup() {
+        const { status } = useAdbStatus();
+        return { status };
+    },
     data() {
         return {
             version: {

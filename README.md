@@ -4,8 +4,9 @@ This is [vcarriere's fork](https://github.com/vcarriere/scrcpy-plus) of
 [Frontesque/scrcpy-plus](https://github.com/Frontesque/scrcpy-plus).
 See the [additions and fixes backlog](BACKLOG.md) for planned ADB management,
 automatic updates, built-in password unlock, pattern unlock, and screen handling.
-These features are planned, not implemented. The upstream GPL-3.0-only license
-and original project credits are retained below.
+ADB status and Advanced Start/Stop controls are in development; see the
+[development notes](DEVELOPMENT.md) for verification and remaining work.
+The upstream GPL-3.0-only license and original project credits are retained below.
 
 <img src="https://github.com/Frontesque/scrcpy-plus/blob/main/application/src-tauri/icons/Square150x150Logo.png?raw=true" alt="scrcpy-plus icon" width="200"/>
 

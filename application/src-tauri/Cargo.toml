@@ -6,7 +6,7 @@ authors = ["Frontesque"]
 license = "GPL-3.0-only"
 repository = "https://github.com/Frontesque/scrcpy-plus"
 edition = "2021"
-rust-version = "1.82"
+rust-version = "1.90"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -15,15 +15,18 @@ name = "scrcpyplus_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
-tauri-build = { version = "2.0.0-rc.0", features = [] }
+tauri-build = { version = "2.7.6", features = [] }
 
 [dependencies]
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
-tauri = { version = "2.2.0-rc.0", features = [] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
+tauri = { version = "2.12.7", features = [] }
+tauri-plugin-opener = "2.7.3"
+tauri-plugin-dialog = "2.8.4"
 ureq = "2"
 zip = { version = "2", default-features = false, features = ["deflate"] }
 flate2 = "1"
 tar = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = ["Win32_NetworkManagement_IpHelper", "Win32_Networking_WinSock"] }

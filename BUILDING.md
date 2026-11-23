@@ -4,8 +4,12 @@ This is the guide to building the latest version of SCRCPY+ for all operating sy
 
 ## Prerequisites
 - Windows, Linux & MacOS
-    - [Node v20](https://nodejs.org/en/)
+    - [Node 26 LTS](https://nodejs.org/en/) (verified with 26.13.1)
     - [Rust](https://rustup.rs/)
+      (`rust-toolchain.toml` pins stable 1.100.0)
+- Windows only: Visual Studio C++ Build Tools and a Windows SDK. From PowerShell,
+  `. .\buildtools\Use-DevelopmentEnvironment.ps1` loads the available tools for
+  the current shell. It can also use the documented optional local SDK fallback.
 - Linux only
     - **Debian/Ubuntu-based:**
       ```bash

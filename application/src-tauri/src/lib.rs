@@ -1,6 +1,7 @@
 use serde_json::{ json, Value };
 mod system_command;
 mod downloader;
+mod adb_server;
 use tauri::Manager;
 use system_command::{ scrcpy, adb };
 
@@ -31,23 +32,26 @@ async fn download_scrcpy(app: tauri::AppHandle, url: String, version: String) ->
 }
 
 #[tauri::command]
-fn get_dependency_versions() -> Value {
-  let scrcpy_version: String = scrcpy(vec!["--version"]).split_whitespace().nth(1).unwrap_or("Unable to find SCRCPY").to_string();
-  let adb_version:    String = adb(vec!["--version"]).split_whitespace().nth(6).unwrap_or("Unable to find ADB").to_string();
-  return json!({
-    "scrcpy_plus":  env!("CARGO_PKG_VERSION"),
-    "scrcpy":       scrcpy_version,
-    "adb":          adb_version
-  });
+async fn get_dependency_versions() -> Result<Value, String> {
+  tauri::async_runtime::spawn_blocking(|| {
+    let scrcpy_version: String = scrcpy(vec!["--version"]).unwrap_or_default().split_whitespace().nth(1).unwrap_or("Unable to find SCRCPY").to_string();
+    let adb_version:    String = adb(vec!["--version"]).unwrap_or_default().split_whitespace().nth(6).unwrap_or("Unable to find ADB").to_string();
+    return json!({
+      "scrcpy_plus":  env!("CARGO_PKG_VERSION"),
+      "scrcpy":       scrcpy_version,
+      "adb":          adb_version
+    });
+  }).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-fn exec_adb(args: Vec<&str>) -> String {
-  return adb(args);
+async fn exec_adb(args: Vec<String>) -> Result<String, String> {
+  tauri::async_runtime::spawn_blocking(move || adb(args.iter().map(|a| a.as_str()).collect()))
+    .await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
-fn exec_scrcpy(args: Vec<&str>) -> String {
+fn exec_scrcpy(args: Vec<&str>) -> Result<String, String> {
   return scrcpy(args);
 }
 
@@ -56,10 +60,52 @@ async fn run_scrcpy(args: Vec<String>) -> Result<(), String> {
   // Runs on a dedicated blocking thread and resolves once the scrcpy window is closed
   tauri::async_runtime::spawn_blocking(move || {
     let args_ref: Vec<&str> = args.iter().map(|a| a.as_str()).collect();
-    scrcpy(args_ref);
+    system_command::run_scrcpy(args_ref).map(|_| ())
   })
   .await
-  .map_err(|e| e.to_string())
+  .map_err(|e| e.to_string())?
+}
+
+fn adb_status() -> Value {
+  let (paused, changing, sessions) = adb_server::runtime();
+  let endpoint = adb_server::endpoint();
+  let observed = endpoint.as_ref().map_err(|e| e.clone()).and_then(|socket| adb_server::version(socket));
+  let state = match changing {
+    Some(true) => "starting",
+    Some(false) => "stopping",
+    None => match &observed { Ok(Some(_)) => "running", Ok(None) => "stopped", Err(_) => "error" },
+  };
+  json!({
+    "state": state, "paused": paused, "active_sessions": sessions,
+    "endpoint": endpoint.unwrap_or_default(), "path": system_command::adb_path(),
+    "protocol_version": observed.as_ref().ok().and_then(|v| *v),
+    "error": observed.err()
+  })
+}
+
+#[tauri::command]
+async fn get_adb_status() -> Result<Value, String> {
+  tauri::async_runtime::spawn_blocking(adb_status).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn control_adb(start: bool) -> Result<Value, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    let mut change = adb_server::change(start)?;
+    let socket = adb_server::endpoint()?;
+    let running = adb_server::version(&socket)?.is_some();
+    if start && !running { system_command::start_adb()?; }
+    if !start && running { adb_server::query(&socket, "host:kill")?; }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+      if adb_server::version(&socket)?.is_some() == start { break; }
+      if std::time::Instant::now() >= deadline { return Err("ADB did not reach the requested state.".to_string()); }
+      std::thread::sleep(std::time::Duration::from_millis(100));
+    }
+    change.complete(start);
+    drop(change);
+    Ok(adb_status())
+  }).await.map_err(|e| e.to_string())?
 }
 
 // #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -67,7 +113,7 @@ pub fn run() {
   tauri::Builder::default()
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
-    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy])
+    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy, get_adb_status, control_adb])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
