@@ -45,8 +45,10 @@ checked without taking over the owner's desktop. The owner opened the portable
 preview and tested Stop followed by starting the original app: the shared server
 returned to Running while the preview stayed paused. The owner's subsequent
 request replaces that behavior with automatic recovery and original-style
-buttons. Source and headless checks cover the change; the full native/device
-acceptance checklist remains open, and the installed app is unchanged. Automatic ADB updates,
+buttons. The owner subsequently confirmed the Pixel appears in preview v3 after
+wireless discovery was recovered. Source and headless checks cover the controls;
+the full native/device acceptance checklist remains open, and the installed app
+is unchanged. Automatic ADB updates,
 native password/pattern unlock, protected-screen power handling, friendly device
 labels, and physical-device grouping remain backlog work. Full child-process
 cancellation on app exit also remains open under item 06.
@@ -64,9 +66,11 @@ Set-Location src-tauri
 cargo test --lib
 ```
 
-- Ten Rust tests cover passive protocol queries, a non-ADB endpoint, closed
+- Seventeen Rust tests cover passive protocol queries, a non-ADB endpoint, closed
   ports, independent endpoints, paused-command/session guards, launch failure,
-  unsuccessful exit status, automatic recovery, and stale observations around Stop.
+  unsuccessful exit status, automatic recovery, stale observations around Stop,
+  known-peer learning, cache bounds/expiry, local subnet/server restrictions,
+  discovery failures, request throttling, and the mDNS wire question.
 - Seven headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
@@ -85,6 +89,13 @@ cargo test --lib
   a second server could not bind an occupied endpoint, and stopping one left the
   other responsive. The shared endpoint's protocol response stayed unchanged.
   Different ADB versions sharing a server have not been tested.
+- Two ignored native mDNS tests require explicit `SCRCPY_PLUS_TEST_ADB` and
+  `SCRCPY_PLUS_TEST_MDNS_CACHE` settings. The latter must name an isolated local
+  test-cache directory. `probe_known_connected_peer` learns an already connected
+  wireless peer and sends the production query; `recover_from_cached_peer`
+  requires the same cache and a missing known live mDNS service to verify recovery.
+  These tests contact the known local phone but do not restart ADB, change phone
+  settings, read credentials, or send input. They are excluded from normal tests.
 
 Test-created browser contexts and the local preview server close after the run.
 Preview images under local `artifacts/` contain synthetic state only and are
@@ -113,21 +124,51 @@ under `.tools/`, with their original licenses. The environment helper recognizes
 those paths without changing the system installation. These SDK packages and the
 portable Node runtime are not part of the app or the repository distribution.
 
-## Recurring wireless discovery investigation
+## Recurring wireless discovery investigation and recovery
 
-The owner reported a second occurrence of the phone missing from the installed
-app. Read-only checks found ADB 37.0.3 running with mDNS enabled, but no connected
-devices and an empty mDNS service list. Connecting to the current endpoint supplied
-by the owner succeeded and the device identity matched the enrolled phone. The
-shared ADB server was not restarted. This restores a connection, not automatic
-discovery reliability.
+ADB 37.0.3 (build 16887417), the latest stable release listed by Google on
+November 23, 2026, exhibited the reported failure. The server stayed running with
+LIBADBMDNS enabled while its mDNS service list was empty. A direct connection to
+the current endpoint initially restored the transport; subsequent observations
+found that transport online under its mDNS name even while service records were
+missing. Server health, an online transport, and service discovery are separate.
 
-ADB's service list stayed empty after the direct connection. Bounded multicast
-and unicast queries for `_adb-tls-connect._tcp.local` received no replies. These
-observations do not establish whether the cause is the phone's advertising,
-network multicast forwarding, host filtering, or ADB's discovery implementation.
-Keep investigation and verified recovery under backlog item 13; do not hard-code
-the owner's address/port or publish their device identity, keys, or private logs.
+Controlled packet captures distinguished the queries: a normal multicast PTR
+question for `_adb-tls-connect._tcp.local` received no phone response in the
+bounded test; a directed query to the known phone address, using source UDP port
+5353, received the phone's multicast PTR/SRV/address response and immediately
+repopulated ADB's service list. An earlier unicast query from an ephemeral source
+port did not do this. The production Rust probe also elicited a valid multicast
+response, about 163 ms after its query, with the shared ADB process unchanged.
+The opt-in native recovery test subsequently passed with that peer's service
+missing: the actual refresh path restored its mDNS record and online transport,
+again without restarting the server. Other devices' advertised services did not
+prevent recovery of the missing peer.
+The underlying reason for the multicast-query difference remains unconfirmed;
+this does not establish a general Windows, router, phone, or ADB defect.
+
+The native device refresh now learns local IPv4 addresses from online IP
+transports or mDNS service records matching an online transport. It stores at
+most 16 addresses for 30 days in `known-mdns-peers.json` in the app's local data
+profile. These are discovery hints, not physical identity or credential bindings.
+No personal address, device ID, debugging port, pairing key, or credential is
+hard-coded or shipped. Cache failures leave normal discovery available.
+
+At most once every 30 seconds during device polling, missing known addresses on
+an active, directly connected private/link-local subnet receive the standard
+PTR question on UDP 5353. ADB's listener stays in place and handles service
+resolution and authentication. The app then refreshes devices, preserving the
+original results on a query failure. It never scans subnets or debugging ports,
+reconnects through a stale port, changes phone settings, or restarts the server
+to recover mDNS. The existing native operation guard also blocks this path after
+intentional Stop. Passive status checks do not run it. Remote ADB servers are
+excluded because their local network is not the GUI machine's network.
+
+This fallback needs a previously learned address and a reachable phone on the
+same IPv4 subnet. First connections, changed IPs, IPv6-only paths, and networks
+that also block directed mDNS can still require manual connection. Repeated
+GUI cold-start/outage tests and the multicast-path root cause remain open in
+backlog item 13. Packet captures and actual device identifiers remain private.
 
 ## Implementation references and attribution
 
@@ -145,6 +186,16 @@ references (not copied implementations):
   and contributors, MIT OR Apache-2.0, provides the Windows API bindings.
 - [Playwright](https://github.com/microsoft/playwright), Microsoft and
   contributors, Apache-2.0, provides the headless UI test tools.
+- [socket2](https://github.com/rust-lang/socket2), the Rust project contributors,
+  MIT OR Apache-2.0, supplies the shared UDP socket. Version 0.6.5 was checked
+  against its official package release metadata.
+- [if-addrs](https://github.com/messense/if-addrs), MaidSafe.net Limited and
+  contributors, MIT OR BSD-3-Clause, supplies active interface/subnet information.
+  Version 0.15.0 was checked against its official package release metadata.
+- Google's [Platform-Tools release notes](https://developer.android.com/tools/releases/platform-tools)
+  and [ADB documentation](https://developer.android.com/tools/adb).
 
-These build/test dependency licenses remain in their packages. Existing scrcpy
-attribution and licensing remain in the README and backlog.
+Dependency license files remain in their packages. The newly added discovery
+libraries' MIT notices are also retained in THIRD_PARTY_NOTICES.md and copied
+into the portable preview. Existing scrcpy attribution and licensing remain in
+the README and backlog.

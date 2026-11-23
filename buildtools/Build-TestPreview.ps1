@@ -38,6 +38,7 @@ foreach ($name in $runtime_files) {
     if ((Get-FileHash -LiteralPath $source).Hash -ne (Get-FileHash -LiteralPath $copy).Hash) { throw "Runtime copy verification failed: $name" }
 }
 Copy-Item -LiteralPath (Join-Path $project_root 'LICENSE') -Destination (Join-Path $destination 'COPYING.scrcpy-plus.txt') -Force
+Copy-Item -LiteralPath (Join-Path $project_root 'THIRD_PARTY_NOTICES.md') -Destination $destination -Force
 
 $launcher = @'
 @echo off
@@ -66,14 +67,20 @@ and password helper are not replaced or imported.
    its existing device polling, or another ADB tool, can restart the shared server.
 5. Go back to Settings and click Start ADB. Status should return to Running.
 6. If the phone is missing, open Connect Wirelessly and use the phone's current
-   Wireless debugging address/port. Automatic mDNS recovery is still unfinished.
+   Wireless debugging address/port for the first connection. The app remembers
+   local IPv4 addresses learned from connected devices. If their mDNS entries
+   disappear later, it queries those known addresses for the current service at
+   most once every 30 seconds while the Devices page is active. It does not use
+   an old debugging port. A changed IP or a first connection can still need the
+   current endpoint manually. Intentional Stop also pauses this recovery.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI
 restart or manual Resume action is needed. The status check does not start or
 replace the ADB server itself.
 
-This build tests the ADB controls. Built-in password/pattern unlock, automatic
+This build tests the ADB controls and known-address discovery recovery.
+Built-in password/pattern unlock, automatic
 updates, protected-screen handling and device grouping are not implemented yet.
 The separate profile starts with default settings and does not automatically use
 the existing password wrapper. Close the test app when finished; your installed
@@ -84,6 +91,7 @@ Original project: https://github.com/Frontesque/scrcpy-plus (GPL-3.0-only)
 scrcpy: https://github.com/Genymobile/scrcpy (Romain Vimont / contributors,
 Apache-2.0). See COPYING.scrcpy-plus.txt and scrcpy/LICENSE.txt.
 ADB and runtime notices are preserved in scrcpy/adb-NOTICE.txt.
+Additional discovery-library notices are in THIRD_PARTY_NOTICES.md.
 This is a local test artifact, not a public release or signed installer.
 '@
 [IO.File]::WriteAllText((Join-Path $destination 'TESTING.txt'), $instructions)

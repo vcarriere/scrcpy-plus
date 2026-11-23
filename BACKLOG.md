@@ -340,18 +340,26 @@ November 23, 2026. ADB was running with mDNS enabled but listed neither devices 
 mDNS services. A direct connection to the phone's current endpoint worked and
 verified the enrolled identity; the server was not restarted.
 
-- [ ] Reproduce the loss and distinguish a stopped daemon, an offline/unauthorized
+- [x] Reproduce the loss and distinguish a stopped daemon, an offline/unauthorized
       transport, an obsolete wireless endpoint, and missing mDNS advertisements.
 - [ ] Investigate phone advertising, network multicast forwarding, host filtering,
-      and ADB discovery using bounded diagnostics. The initial multicast/unicast
-      service queries received no replies; the root cause is still unconfirmed.
-- [ ] Add clear connection/discovery diagnostics and a recovery path in the app.
-      Consider identity-checked reconnects through known current paths; do not
-      treat a changing IP/port as physical device identity or scan arbitrary ports.
+      and ADB discovery using bounded diagnostics. A directed mDNS question from
+      UDP port 5353 restored service records while ordinary multicast questions
+      received no reply. The latest stable ADB 37.0.3 exhibited the failure.
+      The multicast-path root cause is still unconfirmed.
+- [x] Add bounded recovery for previously connected local IPv4 devices: learn
+      their addresses from online transports, query missing services at most
+      every 30 seconds on their directly connected subnet, and let ADB resolve
+      the current port/authenticate. Respect intentional Stop. Do not treat an
+      address as physical identity, scan arbitrary hosts/ports, or restart ADB.
+- [ ] Add clear connection/discovery diagnostics, including first-connection,
+      changed-address, IPv6-only, and unreachable-network limitations.
 - [ ] Verify repeated disconnect/reconnect and endpoint changes, and ensure any
       recovery respects intentional Stop and other tools sharing the server.
 
-Manual reconnection is a recovery, not a completed fix. Keep personal addresses,
+The production recovery passed with a known peer's service missing and the
+shared server process unchanged;
+repeated GUI outage/cold-start acceptance remains open. Keep personal addresses,
 device IDs, pairing material, and raw private logs out of the public repository.
 
 ## Settings clarity

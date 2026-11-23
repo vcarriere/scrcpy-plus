@@ -326,6 +326,7 @@ mod tests {
         assert!(begin(false).is_err());
         drop(stop);
         assert!(runtime().0);
+        assert!(crate::system_command::adb(vec!["devices"]).is_err());
         let mut start = change(true).unwrap();
         start.complete(true);
         drop(start);

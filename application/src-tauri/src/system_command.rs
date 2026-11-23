@@ -7,6 +7,7 @@ use std::io::Read;
 use std::process::Stdio;
 use std::time::{ Duration, Instant };
 use crate::adb_server;
+use crate::mdns_discovery;
 
 static CUSTOM_SCRCPY: Mutex<Option<String>> = Mutex::new(None);
 static CUSTOM_ADB: Mutex<Option<String>> = Mutex::new(None);
@@ -96,7 +97,11 @@ pub fn adb(args: Vec<&str>) -> Result<String, String> {
         return Err("Use the ADB Start/Stop controls to manage the server.".into());
     }
     let _operation = adb_server::begin(false)?;
-    execute(&adb_path(), args, false)
+    let command = adb_path();
+    let listing = args == ["devices"];
+    let output = execute(&command, args, false)?;
+    if listing { return Ok(mdns_discovery::refresh(output, |args| execute(&command, args.to_vec(), false))); }
+    Ok(output)
 }
 
 pub fn start_adb() -> Result<String, String> {

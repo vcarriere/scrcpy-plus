@@ -2,6 +2,7 @@ use serde_json::{ json, Value };
 mod system_command;
 mod downloader;
 mod adb_server;
+mod mdns_discovery;
 use tauri::Manager;
 use system_command::{ scrcpy, adb };
 
@@ -113,6 +114,10 @@ async fn control_adb(start: bool) -> Result<Value, String> {
 // #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   tauri::Builder::default()
+    .setup(|app| {
+      if let Ok(directory) = app.path().app_local_data_dir() { mdns_discovery::configure(directory); }
+      Ok(())
+    })
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
     .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy, get_adb_status, control_adb])
