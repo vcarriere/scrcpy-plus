@@ -4,15 +4,23 @@ The first implementation adds ADB server status, a small status dot with text,
 and Start/Stop controls revealed by **Show advanced ADB controls** in Settings.
 It preserves normal startup: device discovery can start ADB when the main page
 opens. After an explicit Stop, the native backend blocks device commands and
-new mirroring sessions until an explicit Start or Resume. Page navigation does not clear
-that state. Restarting the app begins a new app session.
+new mirroring sessions while ADB remains stopped. Status polling does not start
+the server. When a fresh status check detects ADB running again, including a server
+started by another app, the backend automatically resumes device discovery in
+the existing GUI. The user does not need to restart the GUI or select Resume.
 
 Stop requires this app's active scrcpy sessions and current ADB commands to finish.
 A confirmation explains the impact on other tools sharing the selected server.
-Closing the app does not stop a shared ADB server. If another tool starts the
-server while this app is paused, the status shows **Running · app paused**.
-**Resume device refresh** resumes this app without replacing the running server;
-the action is available on the main page as well as in Advanced controls.
+Closing the app does not stop a shared ADB server. An external restart restores
+**Running** and enables **Stop ADB** when this app has no active mirror session.
+Start/Stop use the original app's purple primary-button styling and 20-pixel
+icons. The square Stop glyph is an original geometric SVG using the existing
+icon component; the existing Play icon and its attribution remain unchanged.
+
+Lifecycle revisions guard automatic recovery: a running observation begun before
+or during a Stop operation cannot clear the stopped state after that operation.
+Only a fresh successful server probe can resume the app, and it never launches
+or replaces the ADB server to do so.
 
 Status queries use the ADB server protocol directly. On Windows, the read-only
 IPv4/IPv6 TCP listener tables identify closed local ports before querying them;
@@ -35,8 +43,9 @@ own app identifier/settings profile, an embedded frontend, and a double-click
 launcher. Build configuration, executable format, and copied runtime hashes are
 checked without taking over the owner's desktop. The owner opened the portable
 preview and tested Stop followed by starting the original app: the shared server
-returned to Running while the preview stayed paused. That feedback prompted the
-clearer combined status and explicit Resume action. The full native/device
+returned to Running while the preview stayed paused. The owner's subsequent
+request replaces that behavior with automatic recovery and original-style
+buttons. Source and headless checks cover the change; the full native/device
 acceptance checklist remains open, and the installed app is unchanged. Automatic ADB updates,
 native password/pattern unlock, protected-screen power handling, friendly device
 labels, and physical-device grouping remain backlog work. Full child-process
@@ -55,13 +64,14 @@ Set-Location src-tauri
 cargo test --lib
 ```
 
-- Eight Rust tests cover passive protocol queries, a non-ADB endpoint, closed
+- Ten Rust tests cover passive protocol queries, a non-ADB endpoint, closed
   ports, independent endpoints, paused-command/session guards, launch failure,
-  and unsuccessful exit status.
+  unsuccessful exit status, automatic recovery, and stale observations around Stop.
 - Seven headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
-  offline/unauthorized states, an external restart requiring explicit Resume,
+  offline/unauthorized states, an external restart automatically restoring device
+  discovery and the enabled Stop control without an extra Start request,
   and a narrow layout. These are simulated backend
   states, not evidence of device-side behavior.
 - `npm run test:adb` is an opt-in real ADB test. Set `SCRCPY_PLUS_TEST_ADB` to the

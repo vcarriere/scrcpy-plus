@@ -37,18 +37,21 @@ new backend code.
 - [x] Probe status without starting or restarting ADB. Use a direct ADB
       server protocol query to the configured endpoint; do not use `adb devices`
       as a supposedly passive status probe. Respect explicit socket/port settings.
-- [x] Make Stop persist for the current app session: require this app's current
-      scrcpy sessions and ADB operations to finish, pause device polling, and block
-      new device commands. Do not silently restart on the next refresh. Explicit
-      Start resumes operation. Future native authentication/power monitors must
-      use the same lifecycle gate.
+- [x] Require this app's current scrcpy sessions and ADB operations to finish
+      before Stop. Pause device polling and new device commands while the server
+      remains stopped. Status refresh must not restart the server. When a fresh
+      check detects that another tool has started ADB again, automatically resume
+      device discovery in place and enable Stop for the running server; do not ask
+      for a GUI restart or manual Resume. Future native authentication/power
+      monitors must use the same lifecycle gate.
 - [x] Explain in the Stop action that a shared server may also disconnect Android
       Studio, other scrcpy sessions, and other tools. Do not stop an unrelated
       server automatically when closing SCRCPY+.
 
 Acceptance: status refresh leaves a stopped server stopped; Start is idempotent;
-Stop remains effective beyond several refresh cycles; errors and external servers
-are represented accurately. The visual indicator matches the observed server
+Stop remains effective beyond several refresh cycles while no other tool starts
+ADB. An externally restarted server restores device refresh automatically.
+Errors and external servers are represented accurately. The visual indicator matches the observed server
 state and remains understandable without color. Test with an isolated server
 endpoint before any shared-server test.
 

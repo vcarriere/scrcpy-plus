@@ -13,11 +13,12 @@ pub struct Runtime {
     pub changing: Option<bool>,
     pub commands: usize,
     pub sessions: usize,
+    revision: u64,
 }
 
 impl Runtime {
     pub const fn new() -> Self {
-        Self { paused: false, changing: None, commands: 0, sessions: 0 }
+        Self { paused: false, changing: None, commands: 0, sessions: 0, revision: 0 }
     }
 
     fn begin(&mut self, session: bool) -> Result<(), String> {
@@ -34,7 +35,20 @@ impl Runtime {
         }
         self.paused = true;
         self.changing = Some(start);
+        self.revision = self.revision.wrapping_add(1);
         Ok(())
+    }
+
+    fn finish(&mut self, started: bool) {
+        self.paused = !started;
+        self.changing = None;
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    fn observe(&mut self, running: bool, revision: u64) {
+        if running && self.changing.is_none() && self.revision == revision {
+            self.paused = false;
+        }
     }
 }
 
@@ -60,9 +74,7 @@ impl Change {
 
 impl Drop for Change {
     fn drop(&mut self) {
-        let mut runtime = RUNTIME.lock().unwrap();
-        runtime.paused = !self.started;
-        runtime.changing = None;
+        RUNTIME.lock().unwrap().finish(self.started);
     }
 }
 
@@ -71,8 +83,17 @@ pub fn change(start: bool) -> Result<Change, String> {
     Ok(Change { started: false })
 }
 
+#[cfg(test)]
 pub fn runtime() -> (bool, Option<bool>, usize) {
     let runtime = RUNTIME.lock().unwrap();
+    (runtime.paused, runtime.changing, runtime.sessions)
+}
+
+pub fn revision() -> u64 { RUNTIME.lock().unwrap().revision }
+
+pub fn observe(running: bool, revision: u64) -> (bool, Option<bool>, usize) {
+    let mut runtime = RUNTIME.lock().unwrap();
+    runtime.observe(running, revision);
     (runtime.paused, runtime.changing, runtime.sessions)
 }
 
@@ -252,18 +273,48 @@ mod tests {
     }
 
     #[test]
-    fn stop_blocks_commands_until_explicit_start() {
+    fn stopped_server_keeps_commands_paused() {
         let mut runtime = Runtime::new();
         runtime.change(false).unwrap();
-        runtime.changing = None;
+        runtime.finish(false);
+        runtime.observe(false, runtime.revision);
         assert!(runtime.begin(false).is_err());
         assert!(runtime.begin(true).is_err());
         runtime.change(true).unwrap();
         assert!(runtime.begin(false).is_err());
-        runtime.changing = None;
-        runtime.paused = false;
+        runtime.finish(true);
         assert!(runtime.begin(true).is_ok());
         assert!(runtime.change(false).is_err());
+    }
+
+    #[test]
+    fn fresh_running_server_resumes_without_starting_it() {
+        let mut runtime = Runtime::new();
+        runtime.change(false).unwrap();
+        runtime.finish(false);
+        runtime.observe(true, runtime.revision);
+        assert!(!runtime.paused);
+        assert!(runtime.changing.is_none());
+        assert!(runtime.begin(false).is_ok());
+    }
+
+    #[test]
+    fn stale_running_observations_cannot_undo_stop() {
+        let mut runtime = Runtime::new();
+        let before_stop = runtime.revision;
+        runtime.change(false).unwrap();
+        let during_stop = runtime.revision;
+        runtime.observe(true, during_stop);
+        assert!(runtime.paused);
+        runtime.finish(false);
+        runtime.observe(true, before_stop);
+        assert!(runtime.paused);
+        runtime.observe(true, during_stop);
+        assert!(runtime.paused);
+        runtime.observe(false, runtime.revision);
+        assert!(runtime.paused);
+        runtime.observe(true, runtime.revision);
+        assert!(!runtime.paused);
     }
 
     #[test]

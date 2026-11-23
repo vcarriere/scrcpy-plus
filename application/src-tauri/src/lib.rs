@@ -67,9 +67,11 @@ async fn run_scrcpy(args: Vec<String>) -> Result<(), String> {
 }
 
 fn adb_status() -> Value {
-  let (paused, changing, sessions) = adb_server::runtime();
+  let revision = adb_server::revision();
   let endpoint = adb_server::endpoint();
   let observed = endpoint.as_ref().map_err(|e| e.clone()).and_then(|socket| adb_server::version(socket));
+  let running = observed.as_ref().ok().and_then(|v| *v).is_some();
+  let (paused, changing, sessions) = adb_server::observe(running, revision);
   let state = match changing {
     Some(true) => "starting",
     Some(false) => "stopping",

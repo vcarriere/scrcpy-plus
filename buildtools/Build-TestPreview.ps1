@@ -68,9 +68,10 @@ and password helper are not replaced or imported.
 6. If the phone is missing, open Connect Wirelessly and use the phone's current
    Wireless debugging address/port. Automatic mDNS recovery is still unfinished.
 
-If another app starts ADB while this test app is paused, the indicator shows
-"Running - app paused". Choose "Resume device refresh" in this app to resume
-scanning without restarting the server that is already running.
+If another app starts ADB while this test app is paused, it detects the running
+server automatically, resumes device discovery, and enables Stop ADB. No GUI
+restart or manual Resume action is needed. The status check does not start or
+replace the ADB server itself.
 
 This build tests the ADB controls. Built-in password/pattern unlock, automatic
 updates, protected-screen handling and device grouping are not implemented yet.
