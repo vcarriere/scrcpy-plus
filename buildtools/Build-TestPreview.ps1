@@ -1,0 +1,94 @@
+param(
+    [string]$ScrcpyDirectory = (Join-Path $env:LOCALAPPDATA 'scrcpy-plus')
+)
+
+$ErrorActionPreference = 'Stop'
+$project_root = Split-Path $PSScriptRoot -Parent
+$destination = Join-Path $project_root 'artifacts\adb-controls-preview'
+$tools = Join-Path $destination 'scrcpy'
+$configuration = Join-Path $PSScriptRoot 'tauri.preview.conf.json'
+$required = @('scrcpy.exe', 'scrcpy-server', 'adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll', 'LICENSE.txt', 'adb-NOTICE.txt')
+foreach ($name in $required) {
+    if (!(Test-Path -LiteralPath (Join-Path $ScrcpyDirectory $name) -PathType Leaf)) {
+        throw "Required SCRCPY runtime file not found: $name"
+    }
+}
+if ((Test-Path -LiteralPath $destination) -and ((Get-Item -LiteralPath $destination).Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+    throw 'The preview destination must not be a junction or symbolic link.'
+}
+
+. (Join-Path $PSScriptRoot 'Use-DevelopmentEnvironment.ps1')
+Push-Location (Join-Path $project_root 'application')
+try {
+    & npm.cmd run tauri -- build --debug --no-bundle --features preview --config $configuration
+    if ($LASTEXITCODE -ne 0) { throw 'The test preview build failed.' }
+} finally {
+    Pop-Location
+}
+
+New-Item -ItemType Directory -Path $tools -Force | Out-Null
+$binary = Join-Path $project_root 'application\src-tauri\target\debug\scrcpy-plus.exe'
+Copy-Item -LiteralPath $binary -Destination (Join-Path $destination 'scrcpy-plus-preview.exe') -Force
+$runtime_files = @($required + @(Get-ChildItem -LiteralPath $ScrcpyDirectory -Filter '*.dll' -File | Select-Object -ExpandProperty Name)) | Select-Object -Unique
+foreach ($name in $runtime_files) {
+    $source = Join-Path $ScrcpyDirectory $name
+    $copy = Join-Path $tools $name
+    Copy-Item -LiteralPath $source -Destination $copy -Force
+    if ((Get-FileHash -LiteralPath $source).Hash -ne (Get-FileHash -LiteralPath $copy).Hash) { throw "Runtime copy verification failed: $name" }
+}
+Copy-Item -LiteralPath (Join-Path $project_root 'LICENSE') -Destination (Join-Path $destination 'COPYING.scrcpy-plus.txt') -Force
+
+$launcher = @'
+@echo off
+setlocal
+set "WEBVIEW2_USER_DATA_FOLDER="
+pushd "%~dp0"
+start "" "%~dp0scrcpy-plus-preview.exe"
+popd
+endlocal
+'@
+[IO.File]::WriteAllText((Join-Path $destination 'Start Test Build.cmd'), $launcher.Replace("`n", "`r`n"))
+$instructions = @'
+SCRCPY+ Test Build
+
+Double-click "Start Test Build.cmd". No installer is needed.
+The window title is "SCRCPY+ Test Build" and this build uses a separate settings
+profile: me.vcarriere.scrcpy-plus.preview. Your installed app and its settings
+and password helper are not replaced or imported.
+
+1. Open Settings and enable "Show advanced ADB controls".
+2. Check the ADB status dot and Running/Stopped text.
+3. With mirror sessions closed, click Stop ADB and confirm. This stops the shared
+   ADB server and disconnects devices used by other apps too.
+4. Return to the main page. It should remain paused and Stopped for at least
+   10 seconds. The installed scrcpy-plus app should be closed during this check;
+   its existing device polling, or another ADB tool, can restart the shared server.
+5. Go back to Settings and click Start ADB. Status should return to Running.
+6. If the phone is missing, open Connect Wirelessly and use the phone's current
+   Wireless debugging address/port. Automatic mDNS recovery is still unfinished.
+
+This build tests the ADB controls. Built-in password/pattern unlock, automatic
+updates, protected-screen handling and device grouping are not implemented yet.
+The separate profile starts with default settings and does not automatically use
+the existing password wrapper. Close the test app when finished; your installed
+app is unchanged and can be opened normally.
+
+Source: https://github.com/vcarriere/scrcpy-plus/tree/codex/adb-controls
+Original project: https://github.com/Frontesque/scrcpy-plus (GPL-3.0-only)
+scrcpy: https://github.com/Genymobile/scrcpy (Romain Vimont / contributors,
+Apache-2.0). See COPYING.scrcpy-plus.txt and scrcpy/LICENSE.txt.
+ADB and runtime notices are preserved in scrcpy/adb-NOTICE.txt.
+This is a local test artifact, not a public release or signed installer.
+'@
+[IO.File]::WriteAllText((Join-Path $destination 'TESTING.txt'), $instructions)
+$manifest = [ordered]@{
+    source_commit = (& git -C $project_root rev-parse HEAD).Trim()
+    source_dirty = (@(& git -C $project_root status --porcelain).Count -gt 0)
+    profile = 'me.vcarriere.scrcpy-plus.preview'
+    build = 'debug; preview; tauri/custom-protocol'
+    files = @(Get-ChildItem -LiteralPath $destination -File -Recurse | Where-Object { $_.Name -ne 'build-manifest.json' } | ForEach-Object {
+        [ordered]@{ name = [IO.Path]::GetRelativePath($destination, $_.FullName); sha256 = (Get-FileHash -LiteralPath $_.FullName).Hash.ToLowerInvariant() }
+    })
+}
+$manifest | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath (Join-Path $destination 'build-manifest.json') -Encoding utf8
+Write-Output "Portable test build ready: $destination"

@@ -28,8 +28,12 @@ distinguishes offline and unauthorized transports. Device properties from an old
 selection cannot replace a newer selection. Wireless operation errors and failed
 mirror launches appear in the UI.
 
-This is source and isolated-test work. It has not replaced the installed app or
-been validated through a real interactive native window. Automatic ADB updates,
+Source checks and isolated tests are complete. A portable local Windows preview
+can be built with `buildtools/Build-TestPreview.ps1`; see BUILDING.md. It has its
+own app identifier/settings profile, an embedded frontend, and a double-click
+launcher. Build configuration, executable format, and copied runtime hashes are
+checked without opening the owner's desktop. It has not replaced the installed
+app or been validated through a real interactive native window. Automatic ADB updates,
 native password/pattern unlock, protected-screen power handling, friendly device
 labels, and physical-device grouping remain backlog work. Full child-process
 cancellation on app exit also remains open under item 06.

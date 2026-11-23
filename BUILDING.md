@@ -1,4 +1,19 @@
 # Building
+
+## Portable Windows test build
+
+From the repository root, run `./buildtools/Build-TestPreview.ps1`. It loads the
+development environment, builds an embedded-frontend preview, and places a
+portable copy in `artifacts/adb-controls-preview/`. By default it copies the
+runtime from the current user's installed `scrcpy-plus` folder; use
+`-ScrcpyDirectory` to select another existing runtime directory.
+
+Double-click **Start Test Build.cmd** in that folder. This build has a separate
+app identifier/settings profile and a **SCRCPY+ Test Build** window title. It does
+not install over the normal app or import its custom password wrapper/settings.
+ADB is still shared: close the original app before testing Stop, since its device
+polling can restart ADB. See the generated `TESTING.txt` for the manual checklist.
+
 ## Intro
 This is the guide to building the latest version of SCRCPY+ for all operating systems. Note: ***PREREQUISITES FOR RUNNING SCRCPY+ ARE DIFFERENT THAN BUILDING***
 
