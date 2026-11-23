@@ -13,7 +13,7 @@
             </div>
 
             <p v-if="error" class="text-error break-words" role="alert">{{ error }}</p>
-            <p v-if="!adb_available">{{ $t('adb_paused') }}</p>
+            <p v-if="!adb_available">{{ $t('adb_refresh_paused') }}</p>
             <div v-else-if="devices.length > 0">
                 <div role="tablist" class="tabs tabs-boxed">
                     <a role="tab" class="tab force-text-white" :class="active_device == device ? 'tab-active' : ''" v-for="device in devices" @click="set_active(device)">{{ device }}</a>

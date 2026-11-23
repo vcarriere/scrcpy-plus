@@ -4,14 +4,15 @@ The first implementation adds ADB server status, a small status dot with text,
 and Start/Stop controls revealed by **Show advanced ADB controls** in Settings.
 It preserves normal startup: device discovery can start ADB when the main page
 opens. After an explicit Stop, the native backend blocks device commands and
-new mirroring sessions until an explicit Start. Page navigation does not clear
+new mirroring sessions until an explicit Start or Resume. Page navigation does not clear
 that state. Restarting the app begins a new app session.
 
 Stop requires this app's active scrcpy sessions and current ADB commands to finish.
 A confirmation explains the impact on other tools sharing the selected server.
 Closing the app does not stop a shared ADB server. If another tool starts the
-server while this app is paused, the status can show Running while device refresh
-remains paused; Start resumes this app without replacing an existing server.
+server while this app is paused, the status shows **Running · app paused**.
+**Resume device refresh** resumes this app without replacing the running server;
+the action is available on the main page as well as in Advanced controls.
 
 Status queries use the ADB server protocol directly. On Windows, the read-only
 IPv4/IPv6 TCP listener tables identify closed local ports before querying them;
@@ -32,8 +33,11 @@ Source checks and isolated tests are complete. A portable local Windows preview
 can be built with `buildtools/Build-TestPreview.ps1`; see BUILDING.md. It has its
 own app identifier/settings profile, an embedded frontend, and a double-click
 launcher. Build configuration, executable format, and copied runtime hashes are
-checked without opening the owner's desktop. It has not replaced the installed
-app or been validated through a real interactive native window. Automatic ADB updates,
+checked without taking over the owner's desktop. The owner opened the portable
+preview and tested Stop followed by starting the original app: the shared server
+returned to Running while the preview stayed paused. That feedback prompted the
+clearer combined status and explicit Resume action. The full native/device
+acceptance checklist remains open, and the installed app is unchanged. Automatic ADB updates,
 native password/pattern unlock, protected-screen power handling, friendly device
 labels, and physical-device grouping remain backlog work. Full child-process
 cancellation on app exit also remains open under item 06.
@@ -54,10 +58,11 @@ cargo test --lib
 - Eight Rust tests cover passive protocol queries, a non-ADB endpoint, closed
   ports, independent endpoints, paused-command/session guards, launch failure,
   and unsuccessful exit status.
-- Six headless Chromium tests exercise the actual built frontend with synthetic
+- Seven headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
-  offline/unauthorized states, and a narrow layout. These are simulated backend
+  offline/unauthorized states, an external restart requiring explicit Resume,
+  and a narrow layout. These are simulated backend
   states, not evidence of device-side behavior.
 - `npm run test:adb` is an opt-in real ADB test. Set `SCRCPY_PLUS_TEST_ADB` to the
   full path of an existing ADB executable before running it. It uses temporary

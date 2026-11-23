@@ -86,8 +86,30 @@ test("shows failed operations and protects active sessions", async ({ page }) =>
     await page.getByRole("button", { name: "Start ADB", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("Simulated ADB operation failure");
     await page.evaluate(() => { adb_test.server = "running"; adb_test.sessions = 1; adb_test.fail = false; });
-    await expect(page.getByRole("status")).toHaveText("Running");
+    await expect(page.getByRole("status")).toHaveText("Running · app paused");
     await expect(page.getByRole("button", { name: "Stop ADB", exact: true })).toBeDisabled();
+});
+
+test("an external restart shows app paused and requires explicit Resume", async ({ page }) => {
+    await mock(page);
+    await advanced(page);
+    await page.getByRole("button", { name: "Stop ADB", exact: true }).click();
+    await page.getByRole("dialog").getByRole("button", { name: "Stop ADB", exact: true }).click();
+    await expect(page.getByRole("status")).toHaveText("Stopped");
+    await page.evaluate(() => { adb_test.server = "running"; });
+    await expect(page.getByRole("status")).toHaveText("Running · app paused");
+    await expect(page.getByRole("button", { name: "Resume device refresh", exact: true })).toBeEnabled();
+    await page.locator('a[href="/"]').click();
+    const count = await page.evaluate(() => adb_test.calls.filter(call => call.command === "exec_adb" && call.args.args[0] === "devices").length);
+    await page.waitForTimeout(5500);
+    expect(await page.evaluate(() => adb_test.calls.filter(call => call.command === "exec_adb" && call.args.args[0] === "devices").length)).toBe(count);
+    await page.setViewportSize({ width: 380, height: 800 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.screenshot({ path: "../artifacts/adb-external-restart-paused.png", fullPage: true });
+    await page.getByRole("button", { name: "Resume device refresh", exact: true }).click();
+    await expect(page.getByRole("status")).toHaveText("Running");
+    await expect.poll(() => page.evaluate(() => adb_test.calls.filter(call => call.command === "exec_adb" && call.args.args[0] === "devices").length)).toBeGreaterThan(count);
+    expect(await page.evaluate(() => adb_test.calls.filter(call => call.command === "control_adb").map(call => call.args.start))).toEqual([false, true]);
 });
 
 test("offline and unauthorized devices are distinguished without shell commands", async ({ page }) => {

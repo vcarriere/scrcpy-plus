@@ -1,6 +1,6 @@
 <template>
     <div class="p-8">
-        <p v-if="!adb_available" class="mb-4">{{ $t('adb_paused') }}</p>
+        <p v-if="!adb_available" class="mb-4">{{ $t(pause_message) }}</p>
         <p v-if="operation_error" class="text-error break-words mb-4" role="alert">{{ operation_error }}</p>
 
         <!--   Header   -->
@@ -69,8 +69,8 @@
 import { invoke } from "@tauri-apps/api/core";
 export default {
     setup() {
-        const { available: adb_available } = useAdbStatus();
-        return { adb_available };
+        const { available: adb_available, pause_message } = useAdbStatus();
+        return { adb_available, pause_message };
     },
     data() {
         return {

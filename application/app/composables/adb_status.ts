@@ -7,6 +7,8 @@ export function useAdbStatus() {
   const status = useState<any>("adb_status", () => ({ state: "checking", paused: false, active_sessions: 0 }));
   const busy = useState("adb_busy", () => false);
   const error = useState("adb_error", () => "");
+  const paused_running = computed(() => status.value.paused && status.value.state === "running");
+  const pause_message = computed(() => paused_running.value ? "adb_running_paused" : "adb_paused");
   const available = computed(() => !busy.value && !status.value.paused && !["checking", "error", "starting", "stopping"].includes(status.value.state));
 
   async function refresh() {
@@ -39,5 +41,5 @@ export function useAdbStatus() {
     }
   }
 
-  return { status, busy, error, available, refresh, control };
+  return { status, busy, error, paused_running, pause_message, available, refresh, control };
 }

@@ -7,6 +7,8 @@ development environment, builds an embedded-frontend preview, and places a
 portable copy in `artifacts/adb-controls-preview/`. By default it copies the
 runtime from the current user's installed `scrcpy-plus` folder; use
 `-ScrcpyDirectory` to select another existing runtime directory.
+Use `-PreviewName adb-controls-preview-v2` to create a separate output folder
+while an earlier portable copy is still in use.
 
 Double-click **Start Test Build.cmd** in that folder. This build has a separate
 app identifier/settings profile and a **SCRCPY+ Test Build** window title. It does

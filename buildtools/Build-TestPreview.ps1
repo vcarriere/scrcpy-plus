@@ -1,10 +1,11 @@
 param(
-    [string]$ScrcpyDirectory = (Join-Path $env:LOCALAPPDATA 'scrcpy-plus')
+    [string]$ScrcpyDirectory = (Join-Path $env:LOCALAPPDATA 'scrcpy-plus'),
+    [ValidatePattern('^[A-Za-z0-9][A-Za-z0-9-]*$')][string]$PreviewName = 'adb-controls-preview'
 )
 
 $ErrorActionPreference = 'Stop'
 $project_root = Split-Path $PSScriptRoot -Parent
-$destination = Join-Path $project_root 'artifacts\adb-controls-preview'
+$destination = Join-Path (Join-Path $project_root 'artifacts') $PreviewName
 $tools = Join-Path $destination 'scrcpy'
 $configuration = Join-Path $PSScriptRoot 'tauri.preview.conf.json'
 $required = @('scrcpy.exe', 'scrcpy-server', 'adb.exe', 'AdbWinApi.dll', 'AdbWinUsbApi.dll', 'LICENSE.txt', 'adb-NOTICE.txt')
@@ -66,6 +67,10 @@ and password helper are not replaced or imported.
 5. Go back to Settings and click Start ADB. Status should return to Running.
 6. If the phone is missing, open Connect Wirelessly and use the phone's current
    Wireless debugging address/port. Automatic mDNS recovery is still unfinished.
+
+If another app starts ADB while this test app is paused, the indicator shows
+"Running - app paused". Choose "Resume device refresh" in this app to resume
+scanning without restarting the server that is already running.
 
 This build tests the ADB controls. Built-in password/pattern unlock, automatic
 updates, protected-screen handling and device grouping are not implemented yet.

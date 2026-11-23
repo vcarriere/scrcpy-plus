@@ -7,11 +7,11 @@
                 <div><dt class="font-bold">{{ $t('adb_endpoint') }}</dt><dd class="break-all">{{ status.endpoint }}</dd></div>
                 <div v-if="status.protocol_version"><dt class="font-bold">{{ $t('adb_protocol') }}</dt><dd>{{ status.protocol_version }}</dd></div>
             </dl>
-            <p v-if="status.paused">{{ $t('adb_paused') }}</p>
+            <p v-if="status.paused">{{ $t(pause_message) }}</p>
             <p v-if="status.active_sessions">{{ $t('adb_close_sessions') }}</p>
             <p v-if="error || status.error" class="text-error break-words" role="alert">{{ error || status.error }}</p>
             <div class="card-actions mt-2">
-                <button class="btn btn-primary text-white" :disabled="busy || (status.state === 'running' && !status.paused)" @click="control(true)">{{ $t('adb_start') }}</button>
+                <button class="btn btn-primary text-white" :disabled="busy || (status.state === 'running' && !status.paused)" @click="control(true)">{{ $t(paused_running ? 'adb_resume' : 'adb_start') }}</button>
                 <button class="btn text-white" :disabled="busy || status.state !== 'running' || status.active_sessions > 0" @click="confirm_stop = true">{{ $t('adb_stop') }}</button>
             </div>
             <dialog ref="stop_dialog" class="modal" aria-labelledby="adb-stop-title" @close="confirm_stop = false">
@@ -37,8 +37,8 @@ dialog:not([open]) {
 <script>
 export default {
     setup() {
-        const { status, busy, error, control } = useAdbStatus();
-        return { status, busy, error, control };
+        const { status, busy, error, control, paused_running, pause_message } = useAdbStatus();
+        return { status, busy, error, control, paused_running, pause_message };
     },
     data() {
         return { confirm_stop: false }
