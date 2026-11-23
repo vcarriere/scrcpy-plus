@@ -223,7 +223,37 @@ failure in the installed app. Fold the fixes into item 02 where practical.
 - [ ] Gate all refresh/reconnect paths on the intentional-stop state from item 01,
       including page remounts. Avoid overlapping slow refreshes.
 
+## General bug review and fixes
+
+### 09. Check for existing bugs and fix confirmed problems
+
+Priority: start before feature implementation and continue with each change.
+
+- [ ] Review the existing source and relevant upstream issues/fixes for bugs in
+      startup, session shutdown, device selection, USB/wireless reconnects, saved
+      settings, custom binary paths, downloads/updates, and error reporting.
+- [ ] Check UI behavior, translations, invalid inputs, timeouts, overlapping
+      operations, and process/resource cleanup. Include the supporting fixes in
+      items 06–08 rather than duplicating their work.
+- [ ] Record each finding with reproduction steps or specific source evidence,
+      expected versus actual behavior, affected versions/platforms, and priority.
+      Keep suspected bugs separate from confirmed findings.
+- [ ] Prioritize crashes, data/settings loss, wrong-device actions, credential
+      handling, and broken core workflows before cosmetic issues. Reuse suitable
+      upstream fixes with attribution and license compliance.
+- [ ] Fix confirmed problems in small, reviewable changes. Add focused regression
+      checks where they meaningfully prevent recurrence, then verify the affected
+      workflow and record any remaining device/platform testing.
+- [ ] Repeat the relevant checks after each new feature to catch regressions in
+      existing behavior.
+
+Acceptance: findings are tracked with evidence and disposition; each completed
+fix has verification results. Do not mark unresolved or untested behavior fixed.
+
 ## Delivery order and verification
+
+Begin the bug review (09) before feature work; carry its confirmed fixes through
+the relevant steps below and repeat affected checks as features are added.
 
 1. ADB status/controls, polling semantics, and typed process/session results
    (01, 06, 08).
