@@ -5,6 +5,7 @@ mod adb_server;
 mod mdns_discovery;
 mod protected_screen;
 mod screen_power;
+mod screen_power_control;
 use tauri::Manager;
 use system_command::{ scrcpy, adb };
 

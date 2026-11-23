@@ -165,8 +165,8 @@ click-and-drag support from saved automatic pattern unlock.
 
 ### 05. Temporarily turn on the phone screen for protected screens
 
-Implemented for supported Android 15+ main-display sessions, with live entry/exit
-tests on the owner's Android 17 phone. Android secure windows (`FLAG_SECURE`),
+Implemented for supported Android 15+ main-display sessions with scrcpy 5.0.1,
+with live entry/exit tests on the owner's Android 17 phone. Android secure windows (`FLAG_SECURE`),
 biometric overlays, logical sleep, and physical panel power are separate signals.
 
 - [x] Start a manual, read-only **Check protected screen** action directly below
@@ -193,14 +193,11 @@ biometric overlays, logical sleep, and physical panel power are separate signals
       controls and add Pause/Resume for the automatic controller. App rules are
       not treated as proof of a secure window.
 - [x] Use explicit physical display on/off operations, not a blind power-key
-      toggle. Capability-check the selected Android version and display. Upstream
-      scrcpy documents `cmd display power-on/off` for Android 15 and later;
-      older versions need a validated compatible implementation.
-      The tested Android 17 phone advertises `power-reset` and `power-off`, not
-      `power-on`. The tested implementation verifies SurfaceFlinger's actual
-      panel state and synchronizes the framework's Off state before On/Reset;
-      the framework's cached state alone was not reliable after scrcpy turned
-      the panel off directly.
+      toggle. Capability-check the selected Android version and display. Replace
+      v6's framework power-off/reset writes with scrcpy's own display-power
+      protocol through an owned control-only server. Verify SurfaceFlinger's
+      actual panel state. Automatic mode requires a local ADB server and matching
+      scrcpy 5.0.1/server; other releases need validated protocol support.
 - [x] Use one session power controller for this feature; future native password
       recovery must use the same ownership/lifecycle gate.
       Suspend screen-off restoration during the temporary-on state; prevent
@@ -214,6 +211,9 @@ biometric overlays, logical sleep, and physical panel power are separate signals
       physical displays, keyguard-specific biometric variants, and protected
       surfaces without an observable secure-window flag. Unsupported cases must
       remain explicit rather than using black pixels as proof.
+- [ ] Confirm on the owner's normal desktop renderer that the v7 power-control
+      change resolves the reported v6 frozen mirror. Three full-resolution
+      offscreen video On/Off cycles passed; a panel-only test is insufficient.
 
 Acceptance: demonstrate supported entry/exit detection and panel restoration
 without repeated toggling or conflicts with re-unlock. Record separately whether
@@ -224,9 +224,11 @@ Italian, and Japanese locale files, `protected_screen_check.vue`, native
 `protected_screen.rs`, and the session lifecycle from items 03/06. Synthetic
 secure/unflagged/unknown, focus changes, other windows, and display restrictions
 are covered. Native `screen_power.rs` owns each automatic session and its
-cancellable queries. The real display cycle and both requested protected-entry /
-clear-exit cases passed with ADB 37.0.3 and scrcpy 5.0.1. Video was not recorded or
-captured for these checks; the feature does not remove Android's mirror blocking.
+cancellable queries. The original panel-only checks passed both requested cases
+with ADB 37.0.3 and scrcpy 5.0.1. The revised power path also passed three
+full-resolution offscreen video cycles and an automatic Authenticator/Home
+transition with video continuing afterward. No video is saved; the feature does
+not remove Android's mirror blocking. Desktop-renderer acceptance remains open.
 
 ## Supporting fixes found while inspecting upstream
 

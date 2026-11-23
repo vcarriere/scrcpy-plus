@@ -10,7 +10,7 @@
     "screen_auto_reason_requested": "Lo stato dello schermo resta sotto il tuo controllo fino alla ripresa.",
     "screen_auto_reason_manual_override": "Il telefono è in sospensione o lo stato dello schermo è cambiato altrove. Riprendi per riattivare il controllo automatico.",
     "screen_auto_reason_screen_off_unavailable": "La sessione non ha raggiunto lo stato iniziale a schermo spento. Controlla se un'altra app gestisce lo schermo.",
-    "screen_auto_reason_power_failed": "Impossibile verificare il cambio schermo o l'identità del dispositivo. Controlla il telefono prima di riprendere.",
+    "screen_auto_reason_power_failed": "Impossibile verificare il cambio schermo o l'identità del dispositivo. Controlla il telefono e la connessione. Se la ripresa non riesce, chiudi la finestra di mirroring e riavviala.",
     "screen_auto_reason_state_unavailable": "Impossibile leggere lo stato del telefono. Controlla la connessione prima di riprendere.",
     "protected_screen_title": "Schermate protette",
     "protected_screen_description": "Accende lo schermo per app protette e richieste di impronta, poi lo spegne quando vengono chiuse. Tieni aperto SCRCPY+ durante la duplicazione. I contenuti protetti possono restare neri sul computer.",

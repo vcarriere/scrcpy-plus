@@ -75,7 +75,7 @@ Set-Location src-tauri
 cargo test --lib
 ```
 
-- Thirty-three Rust tests cover passive protocol queries, a non-ADB endpoint, closed
+- Thirty-four Rust tests cover passive protocol queries, a non-ADB endpoint, closed
   ports, independent endpoints, paused-command/session guards, launch failure,
   unsuccessful exit status, automatic recovery, stale observations around Stop,
   known-peer learning, cache bounds/expiry, local subnet/server restrictions,
@@ -169,14 +169,28 @@ variants, and multiple physical panels still need broader compatibility work.
 
 Physical power is read from the filtered `SurfaceFlinger --displays` power modes,
 excluding virtual displays, rather than DisplayManager's cached screen state.
-On the tested Android 17 / SDK 37 phone, scrcpy's initial direct SurfaceFlinger
-Off left the framework cache On. A `power-reset` alone therefore did not light
-the panel. Synchronizing `cmd display power-off 0` first, then the advertised
-On/Reset command, produced verified On. The opposite transition uses explicit
-Off. These operations do not send a blind power-key toggle. SDK, command help,
-and readable physical state are checked before launch; Android 15+ is required.
-The phone advertises `power-reset`/`power-off`, and its help exits 255 despite
-printing valid help. Only the exact read-only help request accepts that status.
+Preview v6 used framework `cmd display power-off` / `power-reset` operations.
+Its panel-only tests passed, but the owner reproduced a frozen mirror after
+switching power. The mirror process and its connections remained alive and ADB
+responded; the exact encoder/renderer failure was not established. Those earlier
+tests used `--no-window` without a video sink, which disables video and could not
+verify continued mirroring.
+
+Power writes now use scrcpy 5.0.1's own `SET_DISPLAY_POWER` control message and
+SurfaceControl implementation. An additional, uniquely named control-only
+scrcpy-server instance shares the selected device and captured ADB endpoint.
+It has no video/audio capture, clipboard synchronization, startup wake, or exit
+power restoration. It does not reset the framework display or recreate the main
+mirror. Its socket forwarding rule, Android jar path, and subprocess are owned
+by the automatic session; cleanup removes only matching owned resources and
+skips ADB commands if the shared server has stopped. A failed control write
+closes the stream rather than reusing a potentially partial protocol message.
+
+Automatic mode currently requires Android 15+, a readable single physical panel,
+a local ADB server, and the verified scrcpy 5.0.1 executable with its matching
+`scrcpy-server` alongside it (or `SCRCPY_SERVER_PATH`). Normal mirroring remains
+available with other versions. Expanding protocol/version support requires
+checking that release's private control protocol, not guessing compatibility.
 
 Each automatic session captures its ADB executable/server endpoint, owns the
 actual scrcpy child, and keeps the native session/Stop gate until it ends. Only
@@ -206,19 +220,30 @@ Opt-in live tests require explicit `SCRCPY_PLUS_TEST_ADB`,
 `SCRCPY_PLUS_TEST_SCRCPY`, and `SCRCPY_PLUS_TEST_DEVICE`. They are excluded from
 normal checks:
 
-- `screen_power::tests::live_display_power_cycle` verified physical On then Off
-  in a headless mirror and restored an initially sleeping device afterward.
+- `screen_power::tests::live_display_power_cycle`, with
+  `SCRCPY_PLUS_TEST_VIDEO=1`, decoded/rendered full-resolution 1440x3120 video
+  through SDL's offscreen dummy/software renderer. Three complete physical
+  On/Off cycles each retained advancing video during subsequent Settings/Home
+  animations. FPS observations after each switch exclude the initial two
+  seconds; no video frames or recordings are saved. This does not exercise the
+  owner's normal desktop GPU renderer, so the new preview still needs that retry.
 - `screen_power::tests::live_automatic_session`, with a bounded duration, ran the
   actual controller. Authenticator entry turned the panel On; returning Home
   restored Off. Wi-Fi sharing's visible fingerprint prompt also turned it On;
   cancelling that prompt restored Off without authenticating. Both were verified
   by the actual panel mode, not a simulated backend or an owner's visual report.
   The shared ADB process stayed running and test-owned mirrors exited.
+- After replacing the power writes, the automatic Authenticator/Home test passed
+  again with video enabled at 1440x3120. Both automatic panel transitions were
+  observed, followed by advancing decoded/rendered video during Settings/Home
+  animations after screen-off. The earlier Wi-Fi biometric panel test remains
+  valid for detection; the new desktop-renderer retry must cover that case too.
 - The fixture options `SCRCPY_PLUS_TEST_RETURN_HOME=1` and
   `SCRCPY_PLUS_TEST_CANCEL_BIOMETRIC=1` perform guarded Home/Back test transitions
   only from the expected app/prompt. They are test-only and are not part of the
-  production controller. No credential, Wi-Fi QR code, or video frame was read,
-  recorded, or published for these tests.
+  production controller. No credential or Wi-Fi QR code was read or recorded.
+  The video-enabled regression decodes frames in memory without saving them,
+  capturing the owner's desktop, or exposing protected contents.
 
 The live passes used ADB 37.0.3 and scrcpy 5.0.1 on the selected phone. Cross-build
 and additional vendor/DRM cases are not established by these results.
@@ -302,6 +327,12 @@ references (not copied implementations):
   and [DisplayManagerShellCommand](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/display/DisplayManagerShellCommand.java)
   are API/output references, not copied implementation code.
 - [scrcpy physical screen controls](https://github.com/Genymobile/scrcpy/blob/master/doc/device.md#turn-screen-off).
+- Romain Vimont / Genymobile and scrcpy contributors' Apache-2.0
+  [5.0.1 control protocol](https://github.com/Genymobile/scrcpy/blob/v5.0.1/app/src/control_msg.c),
+  [server connection](https://github.com/Genymobile/scrcpy/blob/v5.0.1/server/src/main/java/com/genymobile/scrcpy/device/DesktopConnection.java),
+  and [controller](https://github.com/Genymobile/scrcpy/blob/v5.0.1/server/src/main/java/com/genymobile/scrcpy/control/Controller.java)
+  are references for the original Rust control client. The existing bundled
+  scrcpy-server is reused without modification; its runtime license is retained.
 - [SurfaceFlinger display dumps](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/android16-release/services/surfaceflinger/SurfaceFlinger.cpp)
   and [SystemUI biometric prompt window](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/packages/SystemUI/src/com/android/systemui/biometrics/AuthContainerView.java)
   are output/layout references. Controller and parser code are original fork work.

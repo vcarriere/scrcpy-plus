@@ -79,11 +79,15 @@ and password helper are not replaced or imported.
    must not start or replace the server.
 8. On the main page, select an online Android 15+ phone and check "Turn off phone
    screen", then "Temporarily turn on phone screen for protected screens".
-   Start SCRCPY using its direct executable and a normal main-display session.
+   Start SCRCPY 5.0.1 using its direct executable, matching scrcpy-server, a local
+   ADB server, and a normal main-display session.
    A protected app window or fingerprint prompt should turn the physical panel
    on; leaving it should turn it off after a short stable-clear delay. Protected
    content can still be black in the computer mirror. The actual panel can be
    used for the protected app or fingerprint sensor. Keep this GUI open.
+   After each switch, check that the mirror still updates and accepts input.
+   Close the old v6 mirror before retrying: its existing frozen stream is not
+   replaced by launching this new build.
 9. Screen switching has separate Pause/Resume controls during its session. Manual
    power changes or phone sleep pause it; Resume explicitly returns control to
    the automatic feature. Closing the mirror ends its monitor. Closing the GUI

@@ -8,7 +8,7 @@ use std::os::windows::process::CommandExt;
 use std::sync::{ Mutex, atomic::{ AtomicBool, AtomicU64, AtomicU8, AtomicUsize, Ordering } };
 use std::sync::Arc;
 use std::time::{ Duration, Instant };
-use crate::{ adb_server, protected_screen, system_command };
+use crate::{ adb_server, protected_screen, screen_power_control, system_command };
 
 const POWER_QUERY: &str = "dumpsys power | grep '^[[:space:]]*mWakefulness='";
 const DISPLAY_QUERY: &str = "dumpsys SurfaceFlinger --displays | grep -E '^[[:space:]]*((Virtual )?Display [0-9]|powerMode=)'";
@@ -18,6 +18,8 @@ static EXIT_READY: AtomicBool = AtomicBool::new(false);
 static NEXT_SESSION: AtomicU64 = AtomicU64::new(1);
 static PREPARING: AtomicUsize = AtomicUsize::new(0);
 static SESSIONS: Mutex<Option<HashMap<u64, Session>>> = Mutex::new(None);
+#[cfg(test)]
+static VIDEO_FRAMES: Mutex<Vec<(Instant, u32)>> = Mutex::new(Vec::new());
 
 #[derive(Clone, Serialize)]
 pub struct Status {
@@ -100,6 +102,7 @@ pub fn exit_ready() -> bool { EXIT_READY.load(Ordering::SeqCst) }
 pub fn finish_shutdown() { EXIT_READY.store(true, Ordering::SeqCst); }
 pub fn idle() -> bool { statuses().is_empty() && PREPARING.load(Ordering::SeqCst) == 0 }
 
+#[derive(Clone)]
 pub struct AdbClient { pub path: String, pub socket: String }
 
 impl AdbClient {
@@ -113,7 +116,7 @@ impl AdbClient {
         command.args(args).env("ADB_SERVER_SOCKET", &self.socket).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
         #[cfg(windows)]
         command.creation_flags(0x08000000);
-        let mut child = command.spawn().map_err(|_| "Could not launch the selected ADB executable.")?;
+        let mut child = command.spawn().map_err(|_| "Could not launch the selected executable.")?;
         let stdout = child.stdout.take().ok_or("Could not read ADB output.")?;
         let (sender, receiver) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
@@ -177,7 +180,6 @@ struct Prepared {
     device: String,
     identity: String,
     user: String,
-    on: &'static str,
     client: AdbClient,
 }
 
@@ -222,12 +224,7 @@ fn prepare(executable: &str, args: &[&str]) -> Result<Prepared, String> {
     let client = AdbClient::capture()?;
     let mut cancelled = || SHUTTING_DOWN.load(Ordering::SeqCst);
     let sdk = client.query(&["-s", &device, "shell", "getprop", "ro.build.version.sdk"], &mut cancelled, false)?;
-    if sdk.trim().parse::<u32>().unwrap_or_default() < 35 { return Err("Automatic screen control requires Android 15 or later with supported display commands.".into()); }
-    let help = client.query(&["-s", &device, "shell", "cmd", "display", "help"], &mut cancelled, true)?;
-    let on = match protected_screen::power_commands(&help) {
-        "on_off" => "power-on", "reset_off" => "power-reset",
-        _ => return Err("This phone does not expose supported display power commands.".into()),
-    };
+    if sdk.trim().parse::<u32>().unwrap_or_default() < 35 { return Err("Automatic screen control currently requires Android 15 or later.".into()); }
     let identity = client.query(&["-s", &device, "shell", "getprop", "ro.serialno"], &mut cancelled, false)?.trim().to_string();
     let user = client.query(&["-s", &device, "shell", "am", "get-current-user"], &mut cancelled, false)?.trim().to_string();
     if identity.is_empty() || identity.eq_ignore_ascii_case("unknown") || user.parse::<u32>().is_err() {
@@ -235,7 +232,7 @@ fn prepare(executable: &str, args: &[&str]) -> Result<Prepared, String> {
     }
     let display = client.query(&["-s", &device, "shell", DISPLAY_QUERY], &mut cancelled, false)?;
     if panel(&display).is_none() { return Err("The main physical display's power state could not be verified.".into()); }
-    Ok(Prepared { device, identity, user, on, client })
+    Ok(Prepared { device, identity, user, client })
 }
 
 #[derive(Default)]
@@ -298,11 +295,11 @@ fn verify_identity(prepared: &Prepared, query: &mut impl FnMut(&[&str]) -> Resul
 #[derive(Debug, PartialEq)]
 enum Change { Applied, Deferred, Manual }
 
-fn set_power(prepared: &Prepared, target: Panel, cleanup: bool, cancelled: &mut impl FnMut() -> bool) -> Result<Change, String> {
-    change_power(prepared, target, cleanup, &mut |args| prepared.client.query(args, cancelled, false))
+fn set_power(prepared: &Prepared, control: &mut screen_power_control::Control, target: Panel, cleanup: bool, cancelled: &mut impl FnMut() -> bool) -> Result<Change, String> {
+    change_power(prepared, target, cleanup, &mut |args| prepared.client.query(args, cancelled, false), &mut |on| control.power(on))
 }
 
-fn change_power(prepared: &Prepared, target: Panel, cleanup: bool, query: &mut impl FnMut(&[&str]) -> Result<String, String>) -> Result<Change, String> {
+fn change_power(prepared: &Prepared, target: Panel, cleanup: bool, query: &mut impl FnMut(&[&str]) -> Result<String, String>, write: &mut impl FnMut(bool) -> Result<(), String>) -> Result<Change, String> {
     verify_identity(prepared, query)?;
     if !cleanup {
         let windows = query(&["-s", &prepared.device, "shell", "dumpsys", "window", "visible"])?;
@@ -312,14 +309,7 @@ fn change_power(prepared: &Prepared, target: Panel, cleanup: bool, query: &mut i
     let display = query(&["-s", &prepared.device, "shell", DISPLAY_QUERY])?;
     let expected = if target == Panel::On { Panel::Off } else { Panel::On };
     if !awake(&power) || panel(&display) != Some(expected) { return Ok(Change::Manual); }
-    if target == Panel::On {
-        // scrcpy changes SurfaceFlinger directly, leaving DisplayManager's cached
-        // state On. Synchronize its Off state before requesting On/Reset, otherwise
-        // the framework may consider On already satisfied and leave the panel Off.
-        query(&["-s", &prepared.device, "shell", "cmd", "display", "power-off", "0"])?;
-    }
-    let action = if target == Panel::On { prepared.on } else { "power-off" };
-    query(&["-s", &prepared.device, "shell", "cmd", "display", action, "0"])?;
+    write(target == Panel::On)?;
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
         let dump = query(&["-s", &prepared.device, "shell", DISPLAY_QUERY])?;
@@ -335,7 +325,38 @@ fn spawn(executable: &str, args: &[&str], prepared: &Prepared) -> Result<Child, 
         .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(windows)]
     command.creation_flags(0x08000000);
-    command.spawn().map_err(|_| "Could not launch the selected scrcpy executable.".into())
+    #[cfg(test)]
+    if std::env::var("SCRCPY_PLUS_TEST_VIDEO").as_deref() == Ok("1") {
+        // SDL's dummy driver decodes and renders without opening a desktop window.
+        // --no-window alone disables video, so it cannot detect a frozen stream.
+        command.args(["--render-driver=software", "--max-fps=30", "--print-fps"])
+            .env("SDL_VIDEODRIVER", "dummy").env("SDL_AUDIODRIVER", "dummy").stdout(Stdio::piped()).stderr(Stdio::piped());
+    }
+    let child = command.spawn().map_err(|_| "Could not launch the selected scrcpy executable.")?;
+    #[cfg(test)]
+    let mut child = child;
+    #[cfg(test)]
+    if let Some(stdout) = child.stdout.take() {
+        std::thread::spawn(move || {
+            use std::io::{ BufRead, BufReader };
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if line.contains("fps") || line.contains("ERROR") || line.contains("Renderer:") || line.contains("Texture:") { println!("Offscreen video: {}", line); }
+                if let Some(fps) = line.strip_prefix("INFO: ").and_then(|line| line.split_once(" fps")).and_then(|(fps, _)| fps.parse::<u32>().ok()) {
+                    VIDEO_FRAMES.lock().unwrap().push((Instant::now(), fps));
+                }
+            }
+        });
+    }
+    #[cfg(test)]
+    if let Some(stderr) = child.stderr.take() {
+        std::thread::spawn(move || {
+            use std::io::{ BufRead, BufReader };
+            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+                if line.contains("ERROR") { println!("Offscreen video: {}", line); }
+            }
+        });
+    }
+    Ok(child)
 }
 
 pub fn run(executable: &str, args: Vec<&str>) -> Result<String, String> {
@@ -346,6 +367,7 @@ fn run_session(executable: &str, args: Vec<&str>, limit: Option<Duration>) -> Re
     let preparing = Preparation::begin()?;
     let prepared = prepare(executable, &args)?;
     let registration = Registration::new(&prepared.device, &prepared.identity)?;
+    let mut control = screen_power_control::Control::start(executable, &prepared.client, &prepared.device, &prepared.identity, &mut || SHUTTING_DOWN.load(Ordering::SeqCst))?;
     let mut child = spawn(executable, &args, &prepared)?;
     drop(preparing);
     let mut policy = Policy::default();
@@ -371,7 +393,7 @@ fn run_session(executable: &str, args: Vec<&str>, limit: Option<Duration>) -> Re
             if policy.owned_on && !policy.paused {
                 let deadline = Instant::now() + Duration::from_secs(3);
                 let mut cancelled = || Instant::now() >= deadline || child.try_wait().ok().flatten().is_some();
-                let _ = set_power(&prepared, Panel::Off, true, &mut cancelled);
+                let _ = set_power(&prepared, &mut control, Panel::Off, true, &mut cancelled);
             }
             return Ok(String::new());
         }
@@ -412,7 +434,7 @@ fn run_session(executable: &str, args: Vec<&str>, limit: Option<Duration>) -> Re
                 failures = 0;
                 if let Some(target) = target {
                     if registration.control.load(Ordering::SeqCst) != 0 { continue; }
-                    match set_power(&prepared, target, false, &mut cancelled) {
+                    match set_power(&prepared, &mut control, target, false, &mut cancelled) {
                         Ok(Change::Applied) => policy.applied(target),
                         Ok(Change::Deferred) => { policy.clear_since = None; continue; },
                         Ok(Change::Manual) => { policy.pause(); registration.update("paused", "manual_override"); continue; },
@@ -515,7 +537,7 @@ mod tests {
     }
 
     fn fixture() -> Prepared {
-        Prepared { device: "synthetic-route".into(), identity: "synthetic-phone".into(), user: "0".into(), on: "power-reset",
+        Prepared { device: "synthetic-route".into(), identity: "synthetic-phone".into(), user: "0".into(),
             client: AdbClient { path: "unused".into(), socket: "unused".into() } }
     }
 
@@ -539,33 +561,32 @@ mod tests {
                     ["dumpsys", "window", "visible"] => windows(secure),
                     [POWER_QUERY] => "mWakefulness=Awake".into(),
                     [DISPLAY_QUERY] => format!("Display 123:\n powerMode={}", physical),
-                    _ => { writes += 1; String::new() },
+                    _ => panic!("Unexpected query"),
                 })
-            });
+            }, &mut |_| { writes += 1; Ok(()) });
             assert_eq!(result.ok(), expected);
             assert_eq!(writes, 0);
         }
-        assert!(change_power(&prepared, Panel::On, false, &mut |_| Err("cancelled".into())).is_err());
+        assert!(change_power(&prepared, Panel::On, false, &mut |_| Err("cancelled".into()), &mut |_| panic!("Must not write after cancellation")).is_err());
     }
 
     #[test]
-    fn synchronizes_framework_off_before_on_and_verifies_the_actual_panel() {
+    fn uses_one_scrcpy_power_command_and_verifies_the_actual_panel() {
         let prepared = fixture();
         let mut writes = Vec::new();
-        let mut physical = "Off";
+        let physical = std::cell::Cell::new("Off");
         let changed = change_power(&prepared, Panel::On, false, &mut |args| {
             Ok(match &args[3..] {
                 ["getprop", "ro.serialno"] => "synthetic-phone".into(),
                 ["am", "get-current-user"] => "0".into(),
                 ["dumpsys", "window", "visible"] => windows(true),
                 [POWER_QUERY] => "mWakefulness=Awake".into(),
-                [DISPLAY_QUERY] => format!("Display 123:\n powerMode={}", physical),
-                ["cmd", "display", action, "0"] => { writes.push(action.to_string()); physical = if *action == "power-off" { "Off" } else { "On" }; String::new() },
+                [DISPLAY_QUERY] => format!("Display 123:\n powerMode={}", physical.get()),
                 _ => panic!("Unexpected command"),
             })
-        }).unwrap();
+        }, &mut |on| { writes.push(on); physical.set(if on { "On" } else { "Off" }); Ok(()) }).unwrap();
         assert_eq!(changed, Change::Applied);
-        assert_eq!(writes, vec!["power-off", "power-reset"]);
+        assert_eq!(writes, vec![true]);
     }
 
     #[test]
@@ -594,9 +615,12 @@ mod tests {
         let device = std::env::var("SCRCPY_PLUS_TEST_DEVICE").unwrap();
         system_command::set_custom_paths(Some(scrcpy.clone()), Some(adb));
         let _session = adb_server::begin(true).unwrap();
-        let args = vec!["-s", device.as_str(), "--turn-screen-off", "--no-window", "--no-audio"];
+        let video = std::env::var("SCRCPY_PLUS_TEST_VIDEO").as_deref() == Ok("1");
+        let mut args = vec!["-s", device.as_str(), "--turn-screen-off", "--no-audio", "--no-clipboard-autosync"];
+        if !video { args.push("--no-window"); }
         let prepared = prepare(&scrcpy, &args).unwrap();
         let mut never_cancel = || false;
+        let mut control = screen_power_control::Control::start(&scrcpy, &prepared.client, &device, &prepared.identity, &mut never_cancel).unwrap();
         let original = prepared.client.query(&["-s", &device, "shell", POWER_QUERY], &mut never_cancel, false).unwrap();
         let originally_awake = awake(&original);
         let mut child = spawn(&scrcpy, &args, &prepared).unwrap();
@@ -610,10 +634,28 @@ mod tests {
                 if Instant::now() >= deadline { return Err("The headless mirror did not establish the screen-off baseline.".into()); }
                 std::thread::sleep(Duration::from_millis(100));
             }
-            assert_eq!(set_power(&prepared, Panel::On, true, &mut never_cancel)?, Change::Applied);
-            println!("Verified physical screen ON through the advertised Android display command.");
-            assert_eq!(set_power(&prepared, Panel::Off, true, &mut never_cancel)?, Change::Applied);
-            println!("Verified physical screen OFF again without putting Android to sleep.");
+            for cycle in 0..3 {
+                for target in [Panel::On, Panel::Off] {
+                    if set_power(&prepared, &mut control, target, true, &mut never_cancel)? != Change::Applied {
+                        return Err("The test panel state changed outside the controller.".into());
+                    }
+                    let changed = Instant::now();
+                    if video {
+                        // Only normal Settings/Home transitions: no protected content,
+                        // credentials, screenshots, recordings, or desktop capture.
+                        for _ in 0..3 {
+                            prepared.client.query(&["-s", &device, "shell", "am", "start", "-a", "android.settings.SETTINGS"], &mut never_cancel, false)?;
+                            std::thread::sleep(Duration::from_millis(650));
+                            prepared.client.query(&["-s", &device, "shell", "input", "keyevent", "3"], &mut never_cancel, false)?;
+                            std::thread::sleep(Duration::from_millis(650));
+                        }
+                        if child.try_wait().unwrap().is_some() { return Err("The video mirror exited during a display switch.".into()); }
+                        let fps = VIDEO_FRAMES.lock().unwrap().iter().filter(|(time, _)| *time > changed + Duration::from_secs(2)).map(|(_, fps)| *fps).max().unwrap_or_default();
+                        if fps == 0 { return Err(format!("No decoded/rendered frames after {:?} in cycle {}", target, cycle + 1)); }
+                        println!("Cycle {} {:?}: video continued (peak {} fps).", cycle + 1, target, fps);
+                    }
+                }
+            }
             Ok(())
         })();
         let _ = child.kill(); let _ = child.wait();
@@ -635,6 +677,7 @@ mod tests {
         let _session = adb_server::begin(true).unwrap();
         let return_home = std::env::var("SCRCPY_PLUS_TEST_RETURN_HOME").as_deref() == Ok("1");
         let cancel_biometric = std::env::var("SCRCPY_PLUS_TEST_CANCEL_BIOMETRIC").as_deref() == Ok("1");
+        let video = std::env::var("SCRCPY_PLUS_TEST_VIDEO").as_deref() == Ok("1");
         let test_device = device.clone();
         let done = Arc::new(AtomicBool::new(false));
         let watching = done.clone();
@@ -644,6 +687,7 @@ mod tests {
             let mut turned_off = false;
             let mut sent_home = false;
             let mut sent_back = false;
+            let mut video_after_exit = None;
             while !watching.load(Ordering::SeqCst) {
                 for status in statuses() {
                     let state = format!("{}:{}", status.state, status.reason);
@@ -670,18 +714,36 @@ mod tests {
                             sent_back = true;
                         }
                     }
-                    if turned_on && status.state == "monitoring" { turned_off = true; }
+                    if turned_on && status.state == "monitoring" {
+                        turned_off = true;
+                        if video && video_after_exit.is_none() {
+                            video_after_exit = Some(Instant::now());
+                            let client = AdbClient::capture().unwrap();
+                            for _ in 0..3 {
+                                client.query(&["-s", &test_device, "shell", "am", "start", "-a", "android.settings.SETTINGS"], &mut || false, false).unwrap();
+                                std::thread::sleep(Duration::from_millis(650));
+                                client.query(&["-s", &test_device, "shell", "input", "keyevent", "3"], &mut || false, false).unwrap();
+                                std::thread::sleep(Duration::from_millis(650));
+                            }
+                        }
+                    }
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
-            (turned_on, turned_off)
+            (turned_on, turned_off, video_after_exit)
         });
         let limit = format!("--time-limit={}", seconds);
-        let result = run_session(&scrcpy, vec!["-s", &device, "--turn-screen-off", "--no-window", "--no-audio", &limit], Some(Duration::from_secs(seconds + 5)));
+        let mut args = vec!["-s", device.as_str(), "--turn-screen-off", "--no-audio", "--no-clipboard-autosync", &limit];
+        if std::env::var("SCRCPY_PLUS_TEST_VIDEO").as_deref() != Ok("1") { args.push("--no-window"); }
+        let result = run_session(&scrcpy, args, Some(Duration::from_secs(seconds + 5)));
         done.store(true, Ordering::SeqCst);
-        let (turned_on, turned_off) = watcher.join().unwrap();
+        let (turned_on, turned_off, video_after_exit) = watcher.join().unwrap();
         result.unwrap();
         assert!(idle());
         if return_home || cancel_biometric { assert!(turned_on && turned_off, "The real protected-entry and clear-exit transitions must both be observed"); }
+        if let Some(exit) = video_after_exit {
+            assert!(VIDEO_FRAMES.lock().unwrap().iter().any(|(time, fps)| *time > exit + Duration::from_secs(2) && *fps > 0), "Video must continue after the automatic protected-screen exit");
+            println!("Verified decoded/rendered video after the automatic protected-screen exit.");
+        }
     }
 }

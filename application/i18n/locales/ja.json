@@ -10,7 +10,7 @@
     "screen_auto_reason_requested": "再開するまで画面の電源は手動で操作できます。",
     "screen_auto_reason_manual_override": "スマートフォンがスリープしたか、他の操作で画面の電源が変わりました。自動制御が必要な場合は再開してください。",
     "screen_auto_reason_screen_off_unavailable": "セッションの初期画面オフ状態を確認できませんでした。他のアプリが画面を操作していないか確認してください。",
-    "screen_auto_reason_power_failed": "画面の変更または端末の識別を確認できませんでした。スマートフォンを確認してから再開してください。",
+    "screen_auto_reason_power_failed": "画面の変更または端末の識別を確認できませんでした。スマートフォンと接続を確認してください。再開できない場合は、ミラーリングウィンドウを閉じて起動し直してください。",
     "screen_auto_reason_state_unavailable": "スマートフォンの状態を読み取れませんでした。接続を確認してから再開してください。",
     "protected_screen_title": "保護された画面",
     "protected_screen_description": "保護されたアプリや指紋認証の表示中は画面をオンにし、終了後にオフに戻します。ミラー中は SCRCPY+ を開いたままにしてください。保護された内容はパソコン上で黒く表示される場合があります。",

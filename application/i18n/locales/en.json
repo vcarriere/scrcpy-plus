@@ -10,7 +10,7 @@
     "screen_auto_reason_requested": "Screen power is left under your control until you resume.",
     "screen_auto_reason_manual_override": "The phone went to sleep or screen power changed elsewhere. Resume when you want automatic control again.",
     "screen_auto_reason_screen_off_unavailable": "The session did not reach its initial screen-off state. Check for another app controlling screen power.",
-    "screen_auto_reason_power_failed": "The display change or device identity could not be verified. Check the phone before resuming.",
+    "screen_auto_reason_power_failed": "The display change or device identity could not be verified. Check the phone and connection. If resuming fails, close the mirror and start it again.",
     "screen_auto_reason_state_unavailable": "The current phone state could not be read. Check the connection before resuming.",
     "protected_screen_title": "Protected screens",
     "protected_screen_description": "Turn the phone screen on for protected apps and fingerprint prompts, then off again after leaving them. Keep SCRCPY+ open while mirroring. Protected content can still be black on the computer.",
