@@ -77,4 +77,3 @@ export async function mock(page, options = {}) {
         } };
     }, options);
 }
-

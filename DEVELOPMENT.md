@@ -204,6 +204,10 @@ shared ADB server nor the pre-existing mirror was restarted. Physical USB plus
 wireless combination testing was simulated; no USB hardware was connected for
 this check. Actual identifiers and addresses stay out of public fixtures/logs.
 
+Portable preview v8 was built from clean code commit `06e889b`. All 18 artifact
+hashes and the Windows x64 GUI executable format were verified. The existing
+mirror and shared ADB server were left running; the test browser listener closed.
+
 DNS-SD's instance label has a 63-octet limit, distinct from the 255-octet DNS wire
 name limit, including label-length octets. These protocol limits do not make a
 technical service name an appropriate tab label. The app leaves ADB selectors
