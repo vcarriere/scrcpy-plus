@@ -1,9 +1,13 @@
 export async function mock(page, options = {}) {
     await page.addInitScript(options => {
-        localStorage.setItem("setting.disable_update_check", "true");
-        if (options.remember_config) {
-            localStorage.setItem("setting.save_scrcpy_config", "true");
-            localStorage.setItem("scrcpyplus.scrcpy_config", JSON.stringify(options.saved_config || {}));
+        if (!sessionStorage.getItem("scrcpyplus.test_initialized")) {
+            if (options.update_preference !== null) localStorage.setItem("setting.disable_update_check", String(options.update_preference ?? true));
+            for (const [key, value] of Object.entries(options.saved_paths || {})) localStorage.setItem(`scrcpyplus.${key}`, value);
+            if (options.remember_config) {
+                localStorage.setItem("setting.save_scrcpy_config", "true");
+                localStorage.setItem("scrcpyplus.scrcpy_config", JSON.stringify(options.saved_config || {}));
+            }
+            sessionStorage.setItem("scrcpyplus.test_initialized", "true");
         }
         const state = window.adb_test = {
             server: "running", paused: false, sessions: 0, calls: [], devices: "", fail: false,
@@ -19,7 +23,19 @@ export async function mock(page, options = {}) {
         Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async text => { state.clipboard = text; } } });
         window.__TAURI_INTERNALS__ = { invoke: async (command, args = {}) => {
             state.calls.push({ command, args });
-            if (command === "set_binary_paths") return;
+            if (command === "set_binary_paths") { state.binary_requests = { scrcpy_path: args.scrcpyPath, adb_path: args.adbPath }; return; }
+            if (command === "get_binary_paths") {
+                const result = {};
+                for (const key of ["scrcpy_path", "adb_path"]) {
+                    const requested = state.binary_requests?.[key] || null;
+                    const invalid = !!requested && (state.invalid_paths || []).includes(requested);
+                    const custom = !!requested && !invalid;
+                    const name = key === "scrcpy_path" ? "scrcpy.exe" : "adb.exe";
+                    result[key] = { requested, invalid, source: custom ? "custom" : "bundled", command: custom ? requested : `scrcpy/${name}`,
+                        path: custom ? requested : `C:\\SCRCPY+\\scrcpy\\${name}`, available: custom ? !(state.missing_custom || []).includes(requested) : !(state.missing_defaults || []).includes(key) };
+                }
+                return result;
+            }
             if (command === "get_adb_client") return state.client;
             if (command === "control_screen_power") {
                 const session = state.screen_sessions.find(session => session.id === args.id);
@@ -43,7 +59,7 @@ export async function mock(page, options = {}) {
                 return snapshot();
             }
             if (command === "get_dependency_versions") return { scrcpy_plus: "3.1.0", scrcpy: "5.0.1", adb: "37.0.1" };
-            if (command === "environment") return { is_windows: true, os: "windows", arch: "x86_64", app_version: "3.1.0" };
+            if (command === "environment") return { is_windows: true, os: "windows", arch: "x86_64", app_version: "3.1.0", releases_url: "https://api.github.com/repos/Frontesque/scrcpy-plus/releases" };
             if (command === "get_device_inventory") {
                 if (state.paused) throw "ADB is paused";
                 if (state.inventory) return structuredClone(state.inventory);

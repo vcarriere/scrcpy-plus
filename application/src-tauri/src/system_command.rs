@@ -3,14 +3,30 @@ use std::process::Command;
 use std::os::windows::process::CommandExt;
 use std::sync::Mutex;
 use std::path::Path;
+use std::ffi::OsStr;
 use std::io::Read;
 use std::process::Stdio;
 use std::time::{ Duration, Instant };
 use crate::adb_server;
 use crate::mdns_discovery;
 
-static CUSTOM_SCRCPY: Mutex<Option<String>> = Mutex::new(None);
-static CUSTOM_ADB: Mutex<Option<String>> = Mutex::new(None);
+#[derive(Clone)]
+struct BinaryPath { requested: Option<String>, effective: Option<String> }
+
+impl BinaryPath {
+    const fn empty() -> Self { Self { requested: None, effective: None } }
+
+    fn select(requested: Option<String>) -> Self {
+        let requested = requested.filter(|path| !path.is_empty());
+        let effective = sanitize(requested.clone());
+        Self { requested, effective }
+    }
+}
+
+#[derive(Clone)]
+struct BinaryPaths { scrcpy: BinaryPath, adb: BinaryPath }
+
+static BINARY_PATHS: Mutex<BinaryPaths> = Mutex::new(BinaryPaths { scrcpy: BinaryPath::empty(), adb: BinaryPath::empty() });
 
 // An empty or non-existent path clears the override so the bundled binary is used
 fn sanitize(path: Option<String>) -> Option<String> {
@@ -18,18 +34,65 @@ fn sanitize(path: Option<String>) -> Option<String> {
 }
 
 pub fn set_custom_paths(scrcpy_path: Option<String>, adb_path: Option<String>) {
-    *CUSTOM_SCRCPY.lock().unwrap() = sanitize(scrcpy_path);
-    *CUSTOM_ADB.lock().unwrap() = sanitize(adb_path);
+    let paths = BinaryPaths { scrcpy: BinaryPath::select(scrcpy_path), adb: BinaryPath::select(adb_path) };
+    *BINARY_PATHS.lock().unwrap() = paths;
 }
 
 pub fn adb_path() -> String {
     let default = if cfg!(windows) { "scrcpy/adb.exe" } else { "adb" };
-    CUSTOM_ADB.lock().unwrap().clone().unwrap_or(default.to_string())
+    BINARY_PATHS.lock().unwrap().adb.effective.clone().unwrap_or(default.to_string())
 }
 
 pub fn scrcpy_path() -> String {
     let default = if cfg!(windows) { "scrcpy/scrcpy.exe" } else { "scrcpy" };
-    CUSTOM_SCRCPY.lock().unwrap().clone().unwrap_or(default.to_string())
+    BINARY_PATHS.lock().unwrap().scrcpy.effective.clone().unwrap_or(default.to_string())
+}
+
+fn system_path_candidate(path: &Path) -> bool {
+    let Ok(metadata) = path.metadata() else { return false; };
+    if !metadata.is_file() { return false; }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // execvp skips non-executable files and continues searching PATH. This
+        // check reads permission bits; it never starts the candidate program.
+        if metadata.permissions().mode() & 0o111 == 0 { return false; }
+    }
+    true
+}
+
+fn binary_details(selected: &BinaryPath, default: &str, source: &str, search_path: Option<&OsStr>) -> serde_json::Value {
+    let command = selected.effective.as_deref().unwrap_or(default);
+    let source = if selected.effective.is_some() { "custom" } else { source };
+    let resolved = if source == "system" {
+        search_path.and_then(|paths| std::env::split_paths(paths).map(|directory| directory.join(command)).find(|candidate| system_path_candidate(candidate)))
+            .and_then(|path| std::path::absolute(path).ok())
+    } else { std::path::absolute(command).ok() };
+    let available = resolved.as_ref().is_some_and(|path| path.is_file());
+    serde_json::json!({
+        "command": command,
+        "path": resolved.map(|path| path.to_string_lossy().to_string()).unwrap_or_else(|| command.into()),
+        "source": source,
+        "available": available,
+        "requested": selected.requested,
+        "invalid": selected.requested.is_some() && selected.effective.is_none(),
+    })
+}
+
+fn describe_binary_paths(paths: &BinaryPaths, search_path: Option<&OsStr>) -> serde_json::Value {
+    let source = if cfg!(windows) { "bundled" } else { "system" };
+    serde_json::json!({
+        "scrcpy_path": binary_details(&paths.scrcpy, if cfg!(windows) { "scrcpy/scrcpy.exe" } else { "scrcpy" }, source, search_path),
+        "adb_path": binary_details(&paths.adb, if cfg!(windows) { "scrcpy/adb.exe" } else { "adb" }, source, search_path),
+    })
+}
+
+pub fn get_binary_paths() -> serde_json::Value {
+    let paths = BINARY_PATHS.lock().unwrap().clone();
+    let search_path = std::env::var_os("PATH");
+    // Resolve the effective selection without executing ADB, scrcpy, or a custom
+    // wrapper. A selected custom file remains selected if it later disappears.
+    describe_binary_paths(&paths, search_path.as_deref())
 }
 
 fn parse_adb_version(output: &str) -> Result<serde_json::Value, String> {
@@ -65,7 +128,7 @@ fn execute_output(command: &str, args: Vec<&str>, session: bool) -> Result<(std:
     #[cfg(windows)]
     cmd.creation_flags(0x08000000);
     // scrcpy locates adb through this variable, so keep it consistent with the chosen adb
-    if let Some(adb_path) = CUSTOM_ADB.lock().unwrap().clone() {
+    if let Some(adb_path) = BINARY_PATHS.lock().unwrap().adb.effective.clone() {
         cmd.env("ADB", adb_path);
     }
 
@@ -178,5 +241,133 @@ mod tests {
         assert!(parse_adb_version("not adb").is_err());
         let old = parse_adb_version("Android Debug Bridge version 1.0.41\n").unwrap();
         assert!(old["version"].is_null());
+    }
+
+    struct TestDirectory { path: std::path::PathBuf }
+
+    impl TestDirectory {
+        fn new() -> Self {
+            let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+            let path = std::env::temp_dir().join(format!("scrcpy-plus-binary-paths-{}-{}", std::process::id(), nonce));
+            std::fs::create_dir(&path).unwrap();
+            Self { path }
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            if let Ok(entries) = std::fs::read_dir(&self.path) {
+                for entry in entries.flatten() { let _ = std::fs::remove_file(entry.path()); }
+            }
+            let _ = std::fs::remove_dir(&self.path);
+        }
+    }
+
+    #[test]
+    fn default_binary_status_uses_the_same_commands_as_runtime_defaults() {
+        let paths = BinaryPaths { scrcpy: BinaryPath::empty(), adb: BinaryPath::select(Some(String::new())) };
+        let status = describe_binary_paths(&paths, None);
+        assert_eq!(status["scrcpy_path"]["command"], if cfg!(windows) { "scrcpy/scrcpy.exe" } else { "scrcpy" });
+        assert_eq!(status["adb_path"]["command"], if cfg!(windows) { "scrcpy/adb.exe" } else { "adb" });
+        for key in ["scrcpy_path", "adb_path"] {
+            assert_eq!(status[key]["source"], if cfg!(windows) { "bundled" } else { "system" });
+            assert!(status[key]["requested"].is_null());
+            assert_eq!(status[key]["invalid"], false);
+            if cfg!(windows) { assert!(Path::new(status[key]["path"].as_str().unwrap()).is_absolute()); }
+        }
+    }
+
+    #[test]
+    fn missing_saved_override_falls_back_but_deleted_effective_override_does_not() {
+        let directory = TestDirectory::new();
+        let custom = directory.path.join("selected-helper.cmd");
+        let requested = custom.to_string_lossy().to_string();
+        let initial = BinaryPath::select(Some(requested.clone()));
+        let initial_status = binary_details(&initial, "scrcpy/adb.exe", "bundled", None);
+        assert_eq!(initial_status["source"], "bundled");
+        assert_eq!(initial_status["command"], "scrcpy/adb.exe");
+        assert_eq!(initial_status["requested"], requested);
+        assert_eq!(initial_status["invalid"], true);
+
+        std::fs::write(&custom, "@echo off\r\nexit /b 0\r\n").unwrap();
+        let selected = BinaryPath::select(Some(requested.clone()));
+        let present = binary_details(&selected, "scrcpy/adb.exe", "bundled", None);
+        assert_eq!(present["source"], "custom");
+        assert_eq!(present["available"], true);
+        assert_eq!(present["invalid"], false);
+        std::fs::remove_file(&custom).unwrap();
+        let deleted = binary_details(&selected, "scrcpy/adb.exe", "bundled", None);
+        assert_eq!(deleted["source"], "custom");
+        assert_eq!(deleted["command"], requested);
+        assert_eq!(deleted["path"], requested);
+        assert_eq!(deleted["available"], false);
+        assert_eq!(deleted["invalid"], false);
+    }
+
+    #[test]
+    fn system_path_lookup_is_read_only_and_reports_missing_commands_honestly() {
+        let directory = TestDirectory::new();
+        let tool = directory.path.join("synthetic-adb");
+        std::fs::write(&tool, "This fixture is not an executable.").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let search_path = std::env::join_paths([directory.path.as_path()]).unwrap();
+        let found = binary_details(&BinaryPath::empty(), "synthetic-adb", "system", Some(&search_path));
+        assert_eq!(found["source"], "system");
+        assert_eq!(found["path"], tool.to_string_lossy().as_ref());
+        assert_eq!(found["available"], true);
+        let missing = binary_details(&BinaryPath::empty(), "synthetic-no-such-tool", "system", Some(&search_path));
+        assert_eq!(missing["path"], "synthetic-no-such-tool");
+        assert_eq!(missing["available"], false);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn system_path_lookup_skips_non_executable_files_before_a_valid_candidate() {
+        use std::os::unix::fs::PermissionsExt;
+        let first = TestDirectory::new();
+        let second = TestDirectory::new();
+        let skipped = first.path.join("synthetic-adb");
+        let executable = second.path.join("synthetic-adb");
+        std::fs::write(&skipped, "This non-executable fixture must be skipped.").unwrap();
+        std::fs::write(&executable, "This fixture has execute bits but is never launched.").unwrap();
+        std::fs::set_permissions(&skipped, std::fs::Permissions::from_mode(0o644)).unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let search_path = std::env::join_paths([first.path.as_path(), second.path.as_path()]).unwrap();
+        let status = binary_details(&BinaryPath::empty(), "synthetic-adb", "system", Some(&search_path));
+        assert_eq!(status["path"], executable.to_string_lossy().as_ref());
+        assert_eq!(status["available"], true);
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let missing = binary_details(&BinaryPath::empty(), "synthetic-adb", "system", Some(&search_path));
+        assert_eq!(missing["path"], "synthetic-adb");
+        assert_eq!(missing["available"], false);
+    }
+
+    #[test]
+    fn custom_wrapper_status_checks_presence_without_running_the_wrapper() {
+        let directory = TestDirectory::new();
+        let wrapper = directory.path.join("password wrapper.cmd");
+        std::fs::write(&wrapper, "@echo off\r\n>\"%~dp0executed.txt\" echo executed\r\n").unwrap();
+        let selected = BinaryPath::select(Some(wrapper.to_string_lossy().to_string()));
+        let status = binary_details(&selected, "scrcpy/scrcpy.exe", "bundled", None);
+        assert_eq!(status["source"], "custom");
+        assert_eq!(status["path"], wrapper.to_string_lossy().as_ref());
+        assert_eq!(status["available"], true);
+        assert!(!directory.path.join("executed.txt").exists());
+    }
+
+    #[test]
+    fn relative_custom_commands_report_the_effective_absolute_path() {
+        let command = "relative-tools/saved wrapper.cmd";
+        let selected = BinaryPath { requested: Some(command.into()), effective: Some(command.into()) };
+        let status = binary_details(&selected, "scrcpy/scrcpy.exe", "bundled", None);
+        assert_eq!(status["command"], command);
+        assert_eq!(status["source"], "custom");
+        assert_eq!(status["path"], std::path::absolute(command).unwrap().to_string_lossy().as_ref());
+        assert_eq!(status["available"], Path::new(command).is_file());
+        assert_eq!(status["invalid"], false);
     }
 }

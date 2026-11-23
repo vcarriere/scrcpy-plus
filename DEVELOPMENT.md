@@ -75,7 +75,7 @@ Set-Location src-tauri
 cargo test --lib
 ```
 
-- Forty-four Rust tests cover passive protocol queries, a non-ADB endpoint, closed
+- Forty-nine Rust tests cover passive protocol queries, a non-ADB endpoint, closed
   ports, independent endpoints, paused-command/session guards, launch failure,
   unsuccessful exit status, automatic recovery, stale observations around Stop,
   known-peer learning, cache bounds/expiry, local subnet/server restrictions,
@@ -86,8 +86,9 @@ cargo test --lib
   fresh identity/protection checks, physical panel parsing, session ownership,
   cancellation of an actual owned query subprocess, physical-device grouping,
   identity/transport validation, bounded inventory parsing, ambiguous identities,
-  distinct equal-model labels, and checked per-route disconnect.
-- Twenty-two headless Chromium tests exercise the actual built frontend with synthetic
+  distinct equal-model labels, checked per-route disconnect, filesystem-only
+  executable resolution, missing/deleted overrides, and wrapper non-execution.
+- Thirty-one headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
   offline/unauthorized states, an external restart automatically restoring device
@@ -99,7 +100,9 @@ cargo test --lib
   labels, complete/copyable route names, route selection/disconnect, physical
   selection across endpoint changes, explicit selection after phone replacement,
   keyboard tabs, preserved unsaved config after an unresolved selection, visible
-  disambiguators for equal long model names, and narrow/high-scaling layouts.
+  disambiguators for equal long model names, matching device/body typography,
+  narrow/high-scaling layouts, effective executable sources/reset/errors, and
+  the affirmative update checkbox with existing preferences and persistence.
   These are simulated backend
   states, not evidence of device-side behavior.
 - `npm run test:adb` is an opt-in real ADB test. Set `SCRCPY_PLUS_TEST_ADB` to the
@@ -151,6 +154,35 @@ was unavailable. Optional, untracked local development packages used:
 under `.tools/`, with their original licenses. The environment helper recognizes
 those paths without changing the system installation. These SDK packages and the
 portable Node runtime are not part of the app or the repository distribution.
+
+## Executable defaults and update-setting wording
+
+Settings shows each tool's effective path with bundled, system-PATH, custom, or
+unavailable status. The native resolver uses the same requested/effective path
+snapshot as command startup and performs filesystem checks on a blocking worker,
+without executing ADB, scrcpy, or a password wrapper. An initially invalid saved
+override explains the existing default fallback. A selected custom file deleted
+after selection stays custom/unavailable, matching what startup will attempt.
+Each tool can be reset independently; invalid saved selections remain visible
+in the warning until reset or replaced. Status responses from an old page or
+earlier selection are discarded.
+Unix PATH candidates without execute permission bits are skipped. This path has
+an additional Unix-only fixture; the current test run was Windows, so that
+platform-specific fixture was not executed here.
+
+The affirmative **Check for updates** checkbox maps checked to the existing
+`setting.disable_update_check=false` value and unchecked to true. Keeping that
+key preserves preferences and compatibility with older previews. A missing key
+still enables checks and now appears checked. English, Italian, and Japanese
+labels are updated. The scope is the existing SCRCPY+ app release check; new ADB
+and scrcpy checks, installation, and updater behavior remain deferred under item
+15. Disabled checks make no app-release request, and manual download pages are
+unchanged. No automatic installation was introduced.
+
+The device tabs and connection identifiers now use the surrounding body text's
+font family, size, weight, and line height. Their action buttons use the existing
+primary/white-text treatment. Headless style comparisons and renders retain
+full-name wrapping, visible disambiguators, and narrow/scaled layouts.
 
 ## Device labels and grouped connection paths
 

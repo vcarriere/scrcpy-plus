@@ -102,6 +102,13 @@ and password helper are not replaced or imported.
     Choose another route with its radio control; Start SCRCPY uses that route.
     Disconnect removes only that wireless path. Unknown identities remain
     separate. Equal-model devices have distinguishing suffixes.
+12. Settings shows the effective SCRCPY/ADB executable paths and whether they
+    use a bundled/system default or a custom executable. Missing saved overrides
+    explain their fallback; missing selected tools show Unavailable. Reset clears
+    only that tool's override. Reading status does not execute either tool.
+13. "Check for updates" is affirmative: checked enables the existing SCRCPY+
+    app check, unchecked disables it. Previous choices are preserved. Expanded
+    ADB/scrcpy update checks remain on the backlog.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI

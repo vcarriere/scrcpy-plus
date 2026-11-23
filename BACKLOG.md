@@ -408,32 +408,42 @@ device IDs, pairing material, and raw private logs out of the public repository.
 
 ### 14. Clearly show when bundled executable defaults are in use
 
-- [ ] Change the SCRCPY and ADB executable fields so an empty custom override
+- [x] Change the SCRCPY and ADB executable fields so an empty custom override
       clearly says **Using bundled default**, rather than suggesting an executable
       is missing. Distinguish a valid default from an unavailable executable.
-- [ ] Show the effective executable path and whether it comes from the bundled
+- [x] Show the effective executable path and whether it comes from the bundled
       runtime or a custom selection. Keep custom path selection and reset clear.
-- [ ] Check a fresh test profile, an existing custom password wrapper, a custom
+- [x] Check a fresh test profile, an existing custom password wrapper, a custom
       ADB executable, and an invalid/missing saved path. Displayed information
       must match the actual executable used by the backend.
 
+The read-only native status resolves effective paths without running either tool
+or a wrapper. Missing saved overrides explain their fallback; a selected custom
+file deleted afterward stays explicitly custom/unavailable. Reset is per tool.
+
 ### 15. Use an affirmative Check for updates setting
+
+The owner requested the label/inversion change now and deferred the expanded
+ADB/scrcpy update checks. Only the existing SCRCPY+ check is currently covered.
 
 - [ ] Make the setting cover **both ADB and scrcpy updates**, in addition to the
       existing SCRCPY+ app update check. Use the official Google Platform-Tools
       source for ADB and official Genymobile releases for scrcpy, with separate
       installed/available versions and results for each component.
-- [ ] Rename **Do not check for updates** to **Check for updates** and invert
+- [x] Rename **Do not check for updates** to **Check for updates** and invert
       the checkbox/storage logic to match: checked enables checks, unchecked
       disables them. A fresh profile should have the setting checked by default.
-- [ ] Preserve the current effective default, which already allows update checks.
-      Migrate an existing negative setting by inverting its stored value; someone
-      who disabled update checks must keep them disabled after the wording change.
-- [ ] Update every read/write path and translation consistently. Verify new-profile
+- [x] Preserve the current effective default, which already allows update checks.
+      Invert the checkbox's read/write mapping to the existing negative key so
+      existing choices and older builds remain compatible; someone who disabled
+      update checks keeps them disabled after the wording change.
+- [x] Update the current setting and translations consistently. Verify new-profile
       defaults, both legacy values, checkbox changes, and persistence after restart;
-      disabled automatic checks must not issue release-check requests for any
-      covered component. Keep checking separate from installation: this checkbox
-      must not silently replace binaries or enable automatic installation.
+      disabled automatic checks issue no SCRCPY+ release request. Keep checking
+      separate from installation: this checkbox does not install or replace tools.
+- [ ] When the expanded update work is implemented, apply this preference to all
+      covered components and verify that disabled checks make no release requests
+      for SCRCPY+, ADB, or scrcpy.
 
 ### 16. Keep the viewport steady when toggling Advanced ADB controls
 

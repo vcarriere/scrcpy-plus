@@ -27,6 +27,14 @@ test("long device labels and full connection paths fit a narrow window", async (
     await expect(page.getByRole("tab", { name: "Pixel 7 Pro", exact: true })).toHaveAttribute("aria-selected", "true");
     await expect(card.getByText(mdns, { exact: true })).toBeVisible();
     await expect(card.getByText(ip, { exact: true })).toBeVisible();
+    const typography = node => {
+        const style = getComputedStyle(node);
+        return [style.fontFamily, style.fontSize, style.fontWeight, style.lineHeight];
+    };
+    const body_text = await card.locator('.device-information p').nth(1).evaluate(typography);
+    expect(await card.locator('.connection-name').first().evaluate(typography)).toEqual(body_text);
+    expect(await page.getByRole('tab').first().evaluate(typography)).toEqual(body_text);
+    expect(await card.getByRole('button', { name: 'Copy connection', exact: true }).first().evaluate(node => getComputedStyle(node).color)).toBe('rgb(255, 255, 255)');
     await page.setViewportSize({ width: 600, height: 800 });
     await card.screenshot({ path: "../artifacts/device-paths-grouped.png" });
 });

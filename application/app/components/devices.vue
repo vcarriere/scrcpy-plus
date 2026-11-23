@@ -16,7 +16,7 @@
             <p v-if="!adb_available">{{ $t('adb_refresh_paused') }}</p>
             <div v-else-if="devices.length > 0">
                 <div role="tablist" :aria-label="$t('devices')" class="tabs tabs-boxed device-tabs">
-                    <button type="button" role="tab" class="tab force-text-white" :class="active_device_id == device.id ? 'tab-active' : ''"
+                    <button type="button" role="tab" class="tab text-base font-normal force-text-white" :class="active_device_id == device.id ? 'tab-active' : ''"
                         v-for="(device, index) in devices" :key="device.id" :aria-selected="active_device_id == device.id" :aria-label="device.label"
                         :tabindex="active_device_id == device.id || (!active_device_id && index === 0) ? 0 : -1" @click="set_active(device)" @keydown="tab_key($event, index)">
                         <span class="truncate min-w-0">{{ device.name }}</span>
@@ -26,18 +26,18 @@
 
                 <fieldset v-if="active_device" class="mt-4 space-y-3 min-w-0">
                     <legend class="text-white mb-2">{{ $t('device_connections') }}</legend>
-                    <p v-if="!active_device.verified" class="text-sm">{{ $t('device_identity_unavailable') }}</p>
+                    <p v-if="!active_device.verified">{{ $t('device_identity_unavailable') }}</p>
                     <div v-for="route in active_device.routes" :key="`${route.serial}:${route.transport_id}`" class="rounded-lg bg-base-300 p-3 min-w-0">
                         <label class="flex items-start gap-3 cursor-pointer min-w-0">
                             <input type="radio" name="device_connection" class="radio radio-primary shrink-0 mt-1" :checked="is_active(route)" @change="set_active(active_device, route)" />
                             <span class="min-w-0">
                                 <span class="block text-white">{{ $t(`device_connection_${route.kind}`) }} · {{ state_label(route.state) }}</span>
-                                <span class="block text-sm connection-name select-text">{{ route.serial }}</span>
+                                <span class="block connection-name select-text">{{ route.serial }}</span>
                             </span>
                         </label>
                         <div class="flex flex-wrap gap-2 mt-3">
-                            <button class="btn btn-sm" @click="copy(route)">{{ $t(copied_route === route.serial ? 'device_connection_copied' : 'device_connection_copy') }}</button>
-                            <button v-if="is_wireless(route)" class="btn btn-sm" :disabled="!!disconnecting" @click="disconnect(route)">
+                            <button class="btn btn-sm btn-primary text-white" @click="copy(route)">{{ $t(copied_route === route.serial ? 'device_connection_copied' : 'device_connection_copy') }}</button>
+                            <button v-if="is_wireless(route)" class="btn btn-sm btn-primary text-white" :disabled="!!disconnecting" @click="disconnect(route)">
                                 {{ $t('disconnect') }}
                             </button>
                         </div>

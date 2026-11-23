@@ -26,6 +26,11 @@ fn set_binary_paths(scrcpy_path: Option<String>, adb_path: Option<String>) {
   system_command::set_custom_paths(scrcpy_path, adb_path);
 }
 
+#[tauri::command]
+async fn get_binary_paths() -> Result<Value, String> {
+  tauri::async_runtime::spawn_blocking(system_command::get_binary_paths).await.map_err(|e| e.to_string())
+}
+
 // Downloads a scrcpy release archive and extracts it to the app data folder,
 // returning the paths of the extracted scrcpy and adb executables.
 #[tauri::command]
@@ -153,7 +158,7 @@ pub fn run() {
     })
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
-    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen, control_screen_power, get_device_inventory, disconnect_device_route])
+    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, get_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen, control_screen_power, get_device_inventory, disconnect_device_route])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|app, event| {
