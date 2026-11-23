@@ -1,66 +1,6 @@
 import { test, expect } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
-
-async function mock(page, options = {}) {
-    await page.addInitScript(options => {
-        localStorage.setItem("setting.disable_update_check", "true");
-        if (options.remember_config) {
-            localStorage.setItem("setting.save_scrcpy_config", "true");
-            localStorage.setItem("scrcpyplus.scrcpy_config", JSON.stringify(options.saved_config || {}));
-        }
-        const state = window.adb_test = {
-            server: "running", paused: false, sessions: 0, calls: [], devices: "", fail: false,
-            details: { version: "37.0.3", build: "1234", path: "C:\\SCRCPY+\\adb.exe" },
-            client: { path: "C:\\SCRCPY+\\adb.exe", version: "37.0.3-1234", is_windows: true }, ...options,
-        };
-        const snapshot = () => ({
-            state: state.server, paused: state.paused, active_sessions: state.sessions,
-            endpoint: "tcp:localhost:5037", path: "C:\\SCRCPY+\\adb.exe", protocol_version: state.server === "running" ? 41 : null,
-            server_details: state.server === "running" ? state.details : null,
-            screen_sessions: (state.screen_sessions || []).map(session => ({ ...session })),
-        });
-        window.__TAURI_INTERNALS__ = { invoke: async (command, args = {}) => {
-            state.calls.push({ command, args });
-            if (command === "set_binary_paths") return;
-            if (command === "get_adb_client") return state.client;
-            if (command === "control_screen_power") {
-                const session = state.screen_sessions.find(session => session.id === args.id);
-                session.state = args.paused ? "paused" : "monitoring";
-                session.reason = args.paused ? "requested" : "watching";
-                return;
-            }
-            if (command === "inspect_protected_screen") {
-                if (state.screen_fail) throw "Simulated protected-screen query failure";
-                if (state.screen_deferred) return new Promise(resolve => { state.finish_screen = () => resolve(state.screen || { state: "secure" }); });
-                return state.screen || { state: "secure", reason: "focused_window_flag", android_sdk: 37, power_commands: "reset_off" };
-            }
-            if (command === "get_adb_status") {
-                if (state.server === "running") state.paused = false;
-                return snapshot();
-            }
-            if (command === "control_adb") {
-                if (state.fail) throw "Simulated ADB operation failure";
-                state.paused = !args.start;
-                state.server = args.start ? "running" : "stopped";
-                return snapshot();
-            }
-            if (command === "get_dependency_versions") return { scrcpy_plus: "3.1.0", scrcpy: "5.0.1", adb: "37.0.1" };
-            if (command === "environment") return { is_windows: true, os: "windows", arch: "x86_64", app_version: "3.1.0" };
-            if (command === "exec_adb") {
-                if (args.args[0] === "--version") return "Android Debug Bridge version 1.0.41";
-                if (state.paused) throw "ADB is paused";
-                if (args.args[0] === "devices") return "List of devices attached\n" + state.devices;
-                return "Synthetic device property";
-            }
-            if (command === "run_scrcpy") {
-                if (!state.mirror_pending) throw "Simulated launch failure";
-                if (args.automaticScreen) state.screen_sessions = [{ id: 7, device: args.args[1], state: "screen_on", reason: "protected" }];
-                return new Promise(resolve => { state.finish_mirror = () => { state.screen_sessions = []; resolve(); }; });
-            }
-            throw "Unexpected command: " + command;
-        } };
-    }, options);
-}
+import { mock } from "./fixtures.mjs";
 
 async function advanced(page) {
     await page.goto("/settings");
@@ -97,14 +37,14 @@ test("Stop survives page navigation and several device refresh cycles until Star
     await page.getByRole("dialog").getByRole("button", { name: "Stop ADB", exact: true }).click();
     await expect(page.getByRole("status")).toHaveText("Stopped");
     await page.locator('a[href="/"]').click();
-    const count = await page.evaluate(() => adb_test.calls.filter(call => call.command === "exec_adb" && call.args.args[0] === "devices").length);
+    const count = await page.evaluate(() => adb_test.calls.filter(call => call.command === "get_device_inventory").length);
     await page.waitForTimeout(11000);
-    expect(await page.evaluate(() => adb_test.calls.filter(call => call.command === "exec_adb" && call.args.args[0] === "devices").length)).toBe(count);
+    expect(await page.evaluate(() => adb_test.calls.filter(call => call.command === "get_device_inventory").length)).toBe(count);
     await page.getByRole("link", { name: "Settings", exact: true }).first().click();
     await page.getByRole("button", { name: "Start ADB", exact: true }).click();
     await expect(page.getByRole("status")).toHaveText("Running");
     await page.locator('a[href="/"]').click();
-    await expect.poll(() => page.evaluate(() => adb_test.calls.filter(call => call.command === "exec_adb" && call.args.args[0] === "devices").length)).toBeGreaterThan(count);
+    await expect.poll(() => page.evaluate(() => adb_test.calls.filter(call => call.command === "get_device_inventory").length)).toBeGreaterThan(count);
 });
 
 test("shows failed operations and protects active sessions", async ({ page }) => {
@@ -124,10 +64,10 @@ test("an external ADB restart automatically resumes discovery and enables Stop",
     await page.getByRole("dialog").getByRole("button", { name: "Stop ADB", exact: true }).click();
     await expect(page.getByRole("status")).toHaveText("Stopped");
     await page.locator('a[href="/"]').click();
-    const count = await page.evaluate(() => adb_test.calls.filter(call => call.command === "exec_adb" && call.args.args[0] === "devices").length);
+    const count = await page.evaluate(() => adb_test.calls.filter(call => call.command === "get_device_inventory").length);
     await page.evaluate(() => { adb_test.server = "running"; });
     await expect(page.getByRole("status")).toHaveText("Running");
-    await expect.poll(() => page.evaluate(() => adb_test.calls.filter(call => call.command === "exec_adb" && call.args.args[0] === "devices").length)).toBeGreaterThan(count);
+    await expect.poll(() => page.evaluate(() => adb_test.calls.filter(call => call.command === "get_device_inventory").length)).toBeGreaterThan(count);
     await expect(page.getByRole("button", { name: "Start SCRCPY", exact: true })).toBeEnabled();
     await expect(page.getByRole("button", { name: "Resume device refresh", exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => adb_test.calls.filter(call => call.command === "control_adb").map(call => call.args.start))).toEqual([false]);

@@ -301,20 +301,21 @@ fix has verification results. Do not mark unresolved or untested behavior fixed.
 
 ### 10. Review long mDNS names and improve device labels
 
-Priority: alongside device-state work. Owner report: long mDNS names currently
-look poor in the app; reproduce the layout issue before choosing the final design.
+Implemented alongside item 11. A reproduced narrow-window case showed the old
+long tab text painting over the details below; the revised labels keep the
+original tab and card styling.
 
-- [ ] Review actual mDNS service names, their label lengths, and how they appear
+- [x] Review actual mDNS service names, their label lengths, and how they appear
       in the device selector/tabs and device details. Distinguish technical DNS
       label/name limits from the space available for readable UI labels.
-- [ ] Prefer a concise, recognizable device name in the selector, with a useful
+- [x] Prefer a concise, recognizable device name in the selector, with a useful
       disambiguator when devices share the same name/model. Keep the complete
       mDNS name available in the connection details, with a way to copy it.
-- [ ] Check wrapping, truncation, spacing, and overflow at narrow window widths,
+- [x] Check wrapping, truncation, spacing, and overflow at narrow window widths,
       higher display scaling, and with multiple devices. Use the existing app's
       typography and component styling; make shortened labels accessible beyond
       a mouse-only hover tooltip.
-- [ ] Keep display labels separate from the exact ADB transport selector. Never
+- [x] Keep display labels separate from the exact ADB transport selector. Never
       shorten or modify the identifier passed to ADB to make a label fit.
 
 Acceptance: long names no longer distort the layout; similar device names remain
@@ -322,34 +323,40 @@ distinguishable, and the full connection identifier can still be inspected/copie
 
 ### 11. Investigate duplicate devices and group their connection paths
 
-Priority: alongside item 10. Owner report / possible fix: the same physical device
-can appear twice, once as an IP endpoint and once as an mDNS service. Confirm when
-this represents two routes to one device before merging entries.
+Implemented alongside item 10. A real IP connection added beside the phone's
+existing mDNS connection was grouped into one verified physical device; checked
+disconnect removed only the test-owned IP route and retained the original path.
 
-- [ ] Investigate how ADB reports USB, IP, and mDNS transports for the same device,
+- [x] Investigate how ADB reports USB, IP, and mDNS transports for the same device,
       including whether an mDNS service resolves to an already listed IP endpoint.
-- [ ] Identify individual physical devices using verified identity information,
+- [x] Identify individual physical devices using verified identity information,
       then show one device entry with its available connection paths in the device
       information section below the selector. Do not merge devices solely because
       they share a model, friendly name, or an IP address observed at another time.
-- [ ] List each route's connection type, complete transport selector/endpoint,
+- [x] List each route's connection type, complete transport selector/endpoint,
       online/offline/unauthorized state, and which path is currently selected.
       Let the user choose the path used to start a session and disconnect a
       particular wireless route without hiding the device's remaining routes.
-- [ ] Preserve device selection as routes appear/disappear or wireless addresses
+- [x] Preserve device selection as routes appear/disappear or wireless addresses
       change. Represent uncertain identity separately until it can be verified;
       unavailable identity must not cause automatic cross-device grouping.
-- [ ] Bind saved device settings and enrolled unlock credentials to verified
-      physical identity, then recheck the selected connection before any input.
-      Grouping must not weaken item 03's wrong-device protections.
+- [x] Pass the verified physical identity and exact connection to session startup;
+      recheck the current transport, identity, selected ADB, and server before
+      launch or a checked wireless disconnect. Reject device-selector overrides.
+      Existing Remember SCRCPY config remains global. Future per-device settings
+      and native credential enrollment must use this identity and still recheck
+      before each input under item 03; no credentials are migrated here.
 
 Acceptance: a verified device reachable by IP and mDNS appears once with both
 paths in its details; two devices of the same model remain separate. Check route
 loss/reconnect, USB plus wireless, unavailable identity, and intentional ADB Stop.
 
 Source starting point for items 10–11:
-`application/app/components/devices.vue`, which currently labels device tabs with
-the raw ADB selector and requests device properties per selected transport.
+`application/app/components/devices.vue` and native `device_inventory.rs`.
+Synthetic checks cover USB plus wireless, equal models, unavailable identities,
+route loss/replacement, intentional Stop, keyboard use, and larger text/display
+scaling. Physical USB combination testing remains additional hardware coverage;
+the live grouping/disconnect check used IP plus mDNS.
 
 ## Additional ADB reliability work
 

@@ -86,8 +86,8 @@ and password helper are not replaced or imported.
    content can still be black in the computer mirror. The actual panel can be
    used for the protected app or fingerprint sensor. Keep this GUI open.
    After each switch, check that the mirror still updates and accepts input.
-   Close the old v6 mirror before retrying: its existing frozen stream is not
-   replaced by launching this new build.
+   Close older test apps and their mirrors before opening this build. An existing
+   frozen stream is not replaced by launching a new GUI.
 9. Screen switching has separate Pause/Resume controls during its session. Manual
    power changes or phone sleep pause it; Resume explicitly returns control to
    the automatic feature. Closing the mirror ends its monitor. Closing the GUI
@@ -96,17 +96,22 @@ and password helper are not replaced or imported.
 10. "Check protected screen" remains a manual, read-only focused-window check.
     It does not change screen power. A missing flag does not rule out other
     protected surfaces or black-video causes.
+11. Device tabs use compact model names. Verified USB/IP/mDNS connections to the
+    same physical device share one tab. Select a tab to see its full connection
+    names, state, and chosen path. Copy preserves the complete identifier.
+    Choose another route with its radio control; Start SCRCPY uses that route.
+    Disconnect removes only that wireless path. Unknown identities remain
+    separate. Equal-model devices have distinguishing suffixes.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI
 restart or manual Resume action is needed. The status check does not start or
 replace the ADB server itself.
 
-This build tests the ADB controls, known-address discovery recovery, and
-automatic protected-screen/fingerprint-prompt screen power.
-Built-in password/pattern unlock, automatic
-updates and device grouping are not
-implemented yet.
+This build tests the ADB controls, known-address discovery recovery, compact
+device labels, grouped connection paths, and automatic protected-screen /
+fingerprint-prompt screen power. Built-in password/pattern unlock and automatic
+updates are not implemented yet.
 The separate profile starts with default settings and does not automatically use
 the existing password wrapper. Close the test app when finished; your installed
 app is unchanged and can be opened normally.

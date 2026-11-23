@@ -75,7 +75,7 @@ Set-Location src-tauri
 cargo test --lib
 ```
 
-- Thirty-four Rust tests cover passive protocol queries, a non-ADB endpoint, closed
+- Forty-four Rust tests cover passive protocol queries, a non-ADB endpoint, closed
   ports, independent endpoints, paused-command/session guards, launch failure,
   unsuccessful exit status, automatic recovery, stale observations around Stop,
   known-peer learning, cache bounds/expiry, local subnet/server restrictions,
@@ -84,8 +84,10 @@ cargo test --lib
   parsing distinct from protocol version, secure-window/biometric parsing, unknown
   or ambiguous windows, focus races, power-transition debounce, manual overrides,
   fresh identity/protection checks, physical panel parsing, session ownership,
-  and cancellation of an actual owned query subprocess.
-- Fifteen headless Chromium tests exercise the actual built frontend with synthetic
+  cancellation of an actual owned query subprocess, physical-device grouping,
+  identity/transport validation, bounded inventory parsing, ambiguous identities,
+  distinct equal-model labels, and checked per-route disconnect.
+- Twenty-two headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
   offline/unauthorized states, an external restart automatically restoring device
@@ -93,7 +95,11 @@ cargo test --lib
   client/server version/path mismatches, unavailable legacy details, a missing
   client alongside a healthy server, protected-screen check gating, stale-device
   results, visible errors, unsupported virtual/view-only sessions, automatic
-  session status and Pause/Resume, saved opt-in/default migration, and a narrow layout.
+  session status and Pause/Resume, saved opt-in/default migration, compact device
+  labels, complete/copyable route names, route selection/disconnect, physical
+  selection across endpoint changes, explicit selection after phone replacement,
+  keyboard tabs, preserved unsaved config after an unresolved selection, visible
+  disambiguators for equal long model names, and narrow/high-scaling layouts.
   These are simulated backend
   states, not evidence of device-side behavior.
 - `npm run test:adb` is an opt-in real ADB test. Set `SCRCPY_PLUS_TEST_ADB` to the
@@ -145,6 +151,65 @@ was unavailable. Optional, untracked local development packages used:
 under `.tools/`, with their original licenses. The environment helper recognizes
 those paths without changing the system installation. These SDK packages and the
 portable Node runtime are not part of the app or the repository distribution.
+
+## Device labels and grouped connection paths
+
+Device tabs use the model read from the device, falling back to ADB's model hint
+or the connection name. Identical model names receive a short serial suffix,
+extended when suffixes collide. Extremely long labels are visually ellipsized;
+the accessible tab name and selected device details retain the full name. Tabs
+wrap and support arrow/Home/End keys. The original card, purple active tab,
+typography, and button conventions are retained.
+
+The connection section lists each route's type, complete exact selector, state,
+and selected radio control. Copy uses that original selector, and a wireless
+disconnect affects only the checked route. Other paths keep the device visible.
+The wireless-connect header wraps at small widths, avoiding collisions with the
+tab list. Headless renders were checked at 380/600 CSS pixels and with 125% text
+size plus 2x pixel density. The old long-label case was reproduced before editing.
+
+The native inventory captures one ADB executable/server endpoint and reads
+`devices -l`, retaining known-peer mDNS recovery. Only online transports are
+queried, using their numeric `-t` transport ID and one fixed, whitelisted property
+command per route. A physical group requires a fresh, nonplaceholder tuple of
+`ro.serialno`, manufacturer, and product-device values. Model, IP, and mDNS text
+are display/routing data, never identity proof. Unknown, offline, unauthorized,
+and emulator identities remain separate. No identity is persisted or inferred
+from a previously used address. A final listing discards replaced routes and
+metadata is removed if that listing fails. Inventory is bounded to 64 routes and
+a ten-second deadline with bounded per-command output/time.
+
+Disambiguating suffixes stay visible even when a long model name is truncated.
+The selected physical group survives route changes while a verified route to
+that group remains. Its exact selected route is retained where available;
+otherwise another online path in the same verified group is used. A different
+physical identity at the same endpoint clears selection and requires a click.
+An unresolved selection hides/disables launch while preserving the current
+unsaved launch options, rather than destroying the configuration component.
+Launch and wireless disconnect recheck the selected ADB/server and current
+transport; verified identities are re-read before acting. Custom device-selector
+overrides are rejected rather than selecting another phone. Supported attached
+short-option values and non-selector clusters remain available for existing
+configurations. Very long disambiguators use a short connection fallback.
+These startup checks do not replace the per-input checks required by future
+native credential handling. Remember SCRCPY config is still global, and the
+existing password helper is unchanged; native per-device settings/credentials
+will bind to the verified identity under backlog item 03.
+
+Read-only live inventory and selection checks passed on two connected devices.
+A controlled extra IP connection alongside the phone's existing mDNS path then
+verified one physical entry with multiple routes. Checked disconnect removed
+only that test-created IP route; the original route stayed online. Neither the
+shared ADB server nor the pre-existing mirror was restarted. Physical USB plus
+wireless combination testing was simulated; no USB hardware was connected for
+this check. Actual identifiers and addresses stay out of public fixtures/logs.
+
+DNS-SD's instance label has a 63-octet limit, distinct from the 255-octet DNS wire
+name limit, including label-length octets. These protocol limits do not make a
+technical service name an appropriate tab label. The app leaves ADB selectors
+unchanged rather than truncating or applying hostname rules to DNS-SD names.
+References: [RFC 6763 sections 4.1.1 and 4.2](https://www.rfc-editor.org/rfc/rfc6763.html#section-4.1.1)
+and [RFC 1035 section 2.3.4](https://www.rfc-editor.org/rfc/rfc1035.html#section-2.3.4).
 
 ## Automatic screen power for protected windows and fingerprint prompts
 

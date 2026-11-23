@@ -6,6 +6,7 @@ mod mdns_discovery;
 mod protected_screen;
 mod screen_power;
 mod screen_power_control;
+mod device_inventory;
 use tauri::Manager;
 use system_command::{ scrcpy, adb };
 
@@ -60,10 +61,21 @@ fn exec_scrcpy(args: Vec<&str>) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn run_scrcpy(args: Vec<String>, automatic_screen: Option<bool>) -> Result<(), String> {
+async fn get_device_inventory() -> Result<Vec<device_inventory::Device>, String> {
+  tauri::async_runtime::spawn_blocking(device_inventory::refresh).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn disconnect_device_route(selection: device_inventory::Selection) -> Result<(), String> {
+  tauri::async_runtime::spawn_blocking(move || device_inventory::disconnect(&selection)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn run_scrcpy(args: Vec<String>, automatic_screen: Option<bool>, selection: Option<device_inventory::Selection>) -> Result<(), String> {
   // Runs on a dedicated blocking thread and resolves once the scrcpy window is closed
   tauri::async_runtime::spawn_blocking(move || {
     let args_ref: Vec<&str> = args.iter().map(|a| a.as_str()).collect();
+    if let Some(selection) = selection { device_inventory::validate(&selection, &args_ref)?; }
     system_command::run_scrcpy(args_ref, automatic_screen.unwrap_or(false)).map(|_| ())
   })
   .await
@@ -141,7 +153,7 @@ pub fn run() {
     })
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
-    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen, control_screen_power])
+    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen, control_screen_power, get_device_inventory, disconnect_device_route])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|app, event| {

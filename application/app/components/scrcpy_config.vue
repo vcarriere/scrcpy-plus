@@ -89,7 +89,7 @@
                 </div>
             </div>
 
-            <button class="btn btn-primary text-white mt-16" :disabled="running[device] || !adb_available" @click="start_scrcpy">
+            <button class="btn btn-primary text-white mt-16" :disabled="!device || running[device] || !adb_available" @click="start_scrcpy">
                 <icon name="play" size="20x20" />
                 <span>{{ $t('start') }}</span>
             </button>
@@ -101,7 +101,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 export default {
-    props: ["device"],
+    props: ["device", "selection"],
     setup() {
         // Shared state so running sessions survive navigating between pages
         const running = useState("scrcpy_running", () => ({}));
@@ -271,7 +271,7 @@ export default {
             if (!device || this.running[device]) return;
             this.running[device] = true;
             try {
-                await invoke("run_scrcpy", { args: scrcpy_start_args, automaticScreen: this.automatic_screen && this.screen_control_allowed });
+                await invoke("run_scrcpy", { args: scrcpy_start_args, automaticScreen: this.automatic_screen && this.screen_control_allowed, selection: this.selection });
             } catch (e) {
                 this.launch_error = String(e);
             } finally {
