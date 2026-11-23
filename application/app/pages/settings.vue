@@ -12,8 +12,6 @@
             </div>
         </div>
 
-        <adb_controls v-if="advanced_adb" />
-
         <!--   Content   -->
         <div class="card bg-base-200 w-full mb-8">
             <div class="card-body">
@@ -35,6 +33,8 @@
                 </label>
             </div>
         </div>
+
+        <adb_controls v-if="advanced_adb" />
 
         <div class="card bg-base-200 w-full mb-8">
             <div class="card-body min-w-0">

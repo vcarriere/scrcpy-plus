@@ -447,18 +447,23 @@ ADB/scrcpy update checks. Only the existing SCRCPY+ check is currently covered.
 
 ### 16. Keep the viewport steady when toggling Advanced ADB controls
 
-- [ ] Reproduce the screen movement when **Show advanced ADB controls** inserts
+- [x] Reproduce the screen movement when **Show advanced ADB controls** inserts
       the ADB panel above the current position. Keep the toggle and current reading
       position at the same viewport location when content is added or removed.
-- [ ] Consider placing the revealed panel below its toggle or preserving a stable
+- [x] Consider placing the revealed panel below its toggle or preserving a stable
       visible element as the scroll anchor. Avoid unexpected scrolling, focus
       changes, and layout animations that move the user's place on the page.
-- [ ] Check enabling and disabling while scrolled down, keyboard activation,
+- [x] Check enabling and disabling while scrolled down, keyboard activation,
       narrow windows, and display scaling. Account for the browser's scroll limits
       when hiding content reduces the page height.
 
 Acceptance: toggling the setting leaves the user's visible position and focus
 stable wherever the available page height allows it.
+
+The panel now appears immediately after the settings-toggle card. The original
+pointer case moved the toggle by 580 pixels; pointer, narrow-keyboard, and
+larger-text checks now preserve its position exactly. Focus remains on the
+toggle. A separate collapse check covers the shorter document's scroll limit.
 
 ## Delivery order and verification
 

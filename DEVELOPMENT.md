@@ -88,7 +88,7 @@ cargo test --lib
   identity/transport validation, bounded inventory parsing, ambiguous identities,
   distinct equal-model labels, checked per-route disconnect, filesystem-only
   executable resolution, missing/deleted overrides, and wrapper non-execution.
-- Thirty-one headless Chromium tests exercise the actual built frontend with synthetic
+- Thirty-five headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
   offline/unauthorized states, an external restart automatically restoring device
@@ -102,7 +102,8 @@ cargo test --lib
   keyboard tabs, preserved unsaved config after an unresolved selection, visible
   disambiguators for equal long model names, matching device/body typography,
   narrow/high-scaling layouts, effective executable sources/reset/errors, and
-  the affirmative update checkbox with existing preferences and persistence.
+  the affirmative update checkbox with existing preferences and persistence,
+  stable advanced-toggle position/focus, and collapsed-document scroll limits.
   These are simulated backend
   states, not evidence of device-side behavior.
 - `npm run test:adb` is an opt-in real ADB test. Set `SCRCPY_PLUS_TEST_ADB` to the
@@ -178,6 +179,14 @@ labels are updated. The scope is the existing SCRCPY+ app release check; new ADB
 and scrcpy checks, installation, and updater behavior remain deferred under item
 15. Disabled checks make no app-release request, and manual download pages are
 unchanged. No automatic installation was introduced.
+
+The Advanced ADB card opens directly below the settings-toggle card. Inserting
+the old panel above it moved the toggle by 580 pixels in the pointer case and
+more in narrow/larger-text cases. The new order preserves its viewport position
+and focus through pointer and Space-key enable/disable, including 125% text and
+disabled browser scroll anchoring. When collapsing makes the document shorter,
+the browser clamps at its normal maximum scroll position; the regression check
+accepts only the closest position allowed by that limit.
 
 The device tabs and connection identifiers now use the surrounding body text's
 font family, size, weight, and line height. Their action buttons use the existing

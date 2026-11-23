@@ -109,6 +109,10 @@ and password helper are not replaced or imported.
 13. "Check for updates" is affirmative: checked enables the existing SCRCPY+
     app check, unchecked disables it. Previous choices are preserved. Expanded
     ADB/scrcpy update checks remain on the backlog.
+14. While partway down Settings, toggle "Show advanced ADB controls" on/off
+    using the pointer or Space key. The ADB card opens below the toggle card
+    without moving the toggle or focus. Closing it keeps the visible position
+    wherever the shorter document's scroll limits allow.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI

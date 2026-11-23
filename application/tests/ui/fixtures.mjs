@@ -2,6 +2,7 @@ export async function mock(page, options = {}) {
     await page.addInitScript(options => {
         if (!sessionStorage.getItem("scrcpyplus.test_initialized")) {
             if (options.update_preference !== null) localStorage.setItem("setting.disable_update_check", String(options.update_preference ?? true));
+            if (options.advanced_adb !== undefined) localStorage.setItem("setting.advanced_adb", String(options.advanced_adb));
             for (const [key, value] of Object.entries(options.saved_paths || {})) localStorage.setItem(`scrcpyplus.${key}`, value);
             if (options.remember_config) {
                 localStorage.setItem("setting.save_scrcpy_config", "true");
