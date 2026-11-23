@@ -77,22 +77,31 @@ and password helper are not replaced or imported.
    with the running server's executable/version and endpoint. A different server
    is explained; its binary does not prove which app started it. These details
    must not start or replace the server.
-8. To try the first protected-screen prototype, select an online device on the
-   main page and check "Turn off phone screen". Open an affected app on the phone
-   yourself, then click "Check protected screen". This action only reads the
-   current focused main-display window flag. It does not turn the screen on/off.
-   A missing flag does not rule out other protection. Automatic switching is not
-   enabled yet; protected content can stay black in the mirror with the panel on.
+8. On the main page, select an online Android 15+ phone and check "Turn off phone
+   screen", then "Temporarily turn on phone screen for protected screens".
+   Start SCRCPY using its direct executable and a normal main-display session.
+   A protected app window or fingerprint prompt should turn the physical panel
+   on; leaving it should turn it off after a short stable-clear delay. Protected
+   content can still be black in the computer mirror. The actual panel can be
+   used for the protected app or fingerprint sensor. Keep this GUI open.
+9. Screen switching has separate Pause/Resume controls during its session. Manual
+   power changes or phone sleep pause it; Resume explicitly returns control to
+   the automatic feature. Closing the mirror ends its monitor. Closing the GUI
+   ends automation even if the mirror remains open. Unsupported capabilities or
+   unreadable state are reported rather than guessed.
+10. "Check protected screen" remains a manual, read-only focused-window check.
+    It does not change screen power. A missing flag does not rule out other
+    protected surfaces or black-video causes.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI
 restart or manual Resume action is needed. The status check does not start or
 replace the ADB server itself.
 
-This build tests the ADB controls, known-address discovery recovery, and manual
-protected-screen detection.
+This build tests the ADB controls, known-address discovery recovery, and
+automatic protected-screen/fingerprint-prompt screen power.
 Built-in password/pattern unlock, automatic
-updates, automatic protected-screen power handling and device grouping are not
+updates and device grouping are not
 implemented yet.
 The separate profile starts with default settings and does not automatically use
 the existing password wrapper. Close the test app when finished; your installed

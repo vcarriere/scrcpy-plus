@@ -4,6 +4,7 @@ mod downloader;
 mod adb_server;
 mod mdns_discovery;
 mod protected_screen;
+mod screen_power;
 use tauri::Manager;
 use system_command::{ scrcpy, adb };
 
@@ -58,11 +59,11 @@ fn exec_scrcpy(args: Vec<&str>) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn run_scrcpy(args: Vec<String>) -> Result<(), String> {
+async fn run_scrcpy(args: Vec<String>, automatic_screen: Option<bool>) -> Result<(), String> {
   // Runs on a dedicated blocking thread and resolves once the scrcpy window is closed
   tauri::async_runtime::spawn_blocking(move || {
     let args_ref: Vec<&str> = args.iter().map(|a| a.as_str()).collect();
-    system_command::run_scrcpy(args_ref).map(|_| ())
+    system_command::run_scrcpy(args_ref, automatic_screen.unwrap_or(false)).map(|_| ())
   })
   .await
   .map_err(|e| e.to_string())?
@@ -85,6 +86,7 @@ fn adb_status() -> Value {
     "endpoint": endpoint.unwrap_or_default(), "path": system_command::adb_path(),
     "protocol_version": observed.as_ref().ok().and_then(|v| *v),
     "server_details": server_details,
+    "screen_sessions": screen_power::statuses(),
     "error": observed.err()
   })
 }
@@ -102,6 +104,11 @@ async fn get_adb_client() -> Result<Value, String> {
 #[tauri::command]
 async fn inspect_protected_screen(device: String) -> Result<protected_screen::Observation, String> {
   tauri::async_runtime::spawn_blocking(move || protected_screen::inspect(&device)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn control_screen_power(id: u64, paused: bool) -> Result<(), String> {
+  screen_power::control(id, paused)
 }
 
 #[tauri::command]
@@ -133,7 +140,26 @@ pub fn run() {
     })
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
-    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen])
-    .run(tauri::generate_context!())
-    .expect("error while running tauri application");
+    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen, control_screen_power])
+    .build(tauri::generate_context!())
+    .expect("error while building tauri application")
+    .run(|app, event| {
+      if let tauri::RunEvent::ExitRequested { api, .. } = event {
+        let first = screen_power::shutdown();
+        if !screen_power::idle() && !screen_power::exit_ready() {
+          api.prevent_exit();
+          if first {
+            let app = app.clone();
+            std::thread::spawn(move || {
+              let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+              while !screen_power::idle() && std::time::Instant::now() < deadline {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+              }
+              screen_power::finish_shutdown();
+              app.exit(0);
+            });
+          }
+        }
+      }
+    });
 }

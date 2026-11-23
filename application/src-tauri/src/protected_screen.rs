@@ -53,9 +53,13 @@ fn window_flag(dump: &str, token: &str) -> Option<bool> {
         if matching { selected.push_str(line); selected.push('\n'); }
     }
     if matches != 1 { return None; }
-    let display = selected.split_once("mDisplayId=")?.1.split_whitespace().next()?;
+    block_flag(&selected)
+}
+
+fn block_flag(block: &str) -> Option<bool> {
+    let display = block.split_once("mDisplayId=")?.1.split_whitespace().next()?;
     if display != "0" { return None; }
-    let attributes = selected.split_once("mAttrs=")?.1.trim_start();
+    let attributes = block.split_once("mAttrs=")?.1.trim_start();
     if !attributes.starts_with('{') { return None; }
     let mut depth = 0;
     for (index, character) in attributes.char_indices() {
@@ -68,7 +72,51 @@ fn window_flag(dump: &str, token: &str) -> Option<bool> {
     None
 }
 
-fn power_commands(help: &str) -> &'static str {
+fn visible_windows(dump: &str) -> Option<Vec<String>> {
+    if !dump.starts_with("WINDOW MANAGER WINDOWS") { return None; }
+    let mut blocks = Vec::new();
+    for line in dump.lines() {
+        if line.trim_start().starts_with("Window #") { blocks.push(String::new()); }
+        if let Some(block) = blocks.last_mut() { block.push_str(line); block.push('\n'); }
+    }
+    let selected: Vec<_> = blocks.into_iter().filter(|block| {
+        let display = block.split_once("mDisplayId=").and_then(|(_, value)| value.split_whitespace().next());
+        let visible = block.lines().any(|line| line.trim() == "isVisible=true");
+        let surface = block.lines().any(|line| line.trim_start().starts_with("mHasSurface=true "));
+        display == Some("0") && visible && surface
+    }).collect();
+    (!selected.is_empty()).then_some(selected)
+}
+
+fn biometric(block: &str) -> bool {
+    // Standard Android biometric prompts can overlay a still-focused app.
+    // Match the exact SystemUI title/owner, not app text mentioning a sensor.
+    block.lines().next().is_some_and(|line| line.trim_end_matches(':').trim_end().ends_with(" BiometricPrompt}"))
+        && block.split_whitespace().any(|word| word == "package=com.android.systemui")
+        && ["ty=APPLICATION_OVERLAY", "ty=KEYGUARD_DIALOG", "ty=STATUS_BAR_SUB_PANEL", "ty=STATUS_BAR_PANEL"]
+            .iter().any(|kind| block.split_whitespace().any(|word| word == *kind))
+}
+
+#[cfg(test)]
+pub fn visible_biometric(dump: &str) -> bool {
+    visible_windows(dump).is_some_and(|blocks| blocks.iter().any(|block| biometric(block)))
+}
+
+pub fn visible_protection(dump: &str) -> Option<bool> {
+    let blocks = visible_windows(dump)?;
+    let mut unknown = false;
+    for block in blocks {
+        match block_flag(&block) {
+            Some(true) => return Some(true),
+            Some(false) if biometric(&block) => return Some(true),
+            Some(false) => {},
+            None => unknown = true,
+        }
+    }
+    (!unknown).then_some(false)
+}
+
+pub fn power_commands(help: &str) -> &'static str {
     let advertised = |command: &str| help.lines().any(|line| line.trim().split_whitespace().next() == Some(command));
     if !advertised("power-off") { return "unavailable"; }
     if advertised("power-on") { return "on_off"; }
@@ -144,6 +192,26 @@ mod tests {
         assert_eq!(focus("mCurrentFocus=null"), None);
         assert_eq!(focus("mCurrentFocus=Window{abc123 u0 example.app/Screen}\nmCurrentFocus=Window{def456 u0 example.app/Screen}"), None);
         assert_eq!(focus("mCurrentFocus=Window{not-a-token u0 example.app/Screen}"), None);
+    }
+
+    #[test]
+    fn visible_secure_apps_and_biometric_overlays_trigger_protection() {
+        let visible = |flags: &str| window(flags, 0).replace("    isVisible=true", "    mHasSurface=true isReadyForDisplay()=true\n    isVisible=true");
+        assert_eq!(visible_protection(&visible("SECURE HARDWARE_ACCELERATED")), Some(true));
+        assert_eq!(visible_protection(&visible("HARDWARE_ACCELERATED")), Some(false));
+        let biometric = visible("HARDWARE_ACCELERATED").replace("example.app/Screen", "BiometricPrompt")
+            .replace("ty=BASE_APPLICATION", "ty=APPLICATION_OVERLAY").replace("mAttrs=", "package=com.android.systemui\n    mAttrs=");
+        assert_eq!(visible_protection(&biometric), Some(true));
+        assert!(visible_biometric(&biometric));
+        assert!(!visible_biometric(&biometric.replace("com.android.systemui", "example.app")));
+        assert_eq!(visible_protection(&biometric.replace("com.android.systemui", "example.app")), Some(false));
+        assert_eq!(visible_protection(&biometric.replace("isVisible=true", "isVisible=false")), None);
+        assert_eq!(visible_protection(&visible("SECURE").replace("mDisplayId=0", "mDisplayId=1")), None);
+        assert_eq!(visible_protection("Permission denied"), None);
+        let mut overlay = visible("HARDWARE_ACCELERATED");
+        overlay.push_str(&visible("SECURE").replace("Window #0", "Window #1").replace("abc123", "def456"));
+        assert_eq!(visible_protection(&overlay), Some(true));
+        assert_eq!(visible_protection(&visible("unknown")), None);
     }
 
     #[test]

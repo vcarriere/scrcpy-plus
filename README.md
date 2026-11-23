@@ -5,7 +5,7 @@ This is [vcarriere's fork](https://github.com/vcarriere/scrcpy-plus) of
 See the [additions and fixes backlog](BACKLOG.md) for planned ADB management,
 automatic updates, built-in password unlock, pattern unlock, and screen handling.
 ADB status, Advanced Start/Stop controls, known-address discovery recovery,
-and a manual protected-screen detection prototype
+and automatic screen power for protected windows and fingerprint prompts
 are in development; see the
 [development notes](DEVELOPMENT.md) for verification and remaining work.
 The upstream GPL-3.0-only license and original project credits are retained below.

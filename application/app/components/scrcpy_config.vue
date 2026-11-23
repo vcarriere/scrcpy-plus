@@ -13,8 +13,8 @@
                         <p>{{ $t(`scrcpy_flags.${option.arg}`) }}</p>
                     </div>
                 </label>
-                <protected_screen_check v-if="option.arg === '--turn-screen-off'" :device="device"
-                    :enabled="active_args.includes('--turn-screen-off') && !virtual_display && (!custom_display_id || String(display_id) === '0') && !active_args.includes('--otg')" />
+                <protected_screen_check v-if="option.arg === '--turn-screen-off'" :device="device" :running="running[device]"
+                    v-model="automatic_screen" :enabled="screen_control_allowed" />
             </template>
 
             <div class="collapse collapse-arrow bg-base-300">
@@ -112,6 +112,7 @@ export default {
     data() {
         return {
             active_args: [],
+            automatic_screen: false,
             launch_error: "",
             custom_flags: "",
             custom_window_name: false,
@@ -149,7 +150,15 @@ export default {
             ]
         }
     },
+    computed: {
+        screen_control_allowed() {
+            return this.active_args.includes('--turn-screen-off') && !this.virtual_display
+                && (!this.custom_display_id || String(this.display_id) === '0')
+                && !this.active_args.some(arg => ['--otg', '--no-control', '--no-video'].includes(arg));
+        }
+    },
     watch: {
+        automatic_screen() { this.save_config(); },
         active_args() { this.save_config(); },
         custom_flags() { this.save_config(); },
         custom_window_name() { this.save_config(); },
@@ -183,6 +192,7 @@ export default {
             }
             localStorage.setItem("scrcpyplus.scrcpy_config", JSON.stringify({
                 active_args: this.active_args,
+                automatic_screen: this.automatic_screen,
                 custom_flags: this.custom_flags,
                 custom_window_name: this.custom_window_name,
                 custom_display_id: this.custom_display_id,
@@ -204,6 +214,7 @@ export default {
                 if (!saved) return;
                 const known = [...this.basic_options, ...this.window_options, ...this.advanced_options].map(o => o.arg);
                 if (Array.isArray(saved.active_args)) this.active_args = saved.active_args.filter(a => known.includes(a));
+                this.automatic_screen = saved.automatic_screen === true;
                 if (typeof saved.custom_flags == "string") this.custom_flags = saved.custom_flags;
                 this.custom_window_name = saved.custom_window_name === true;
                 this.custom_display_id = saved.custom_display_id === true;
@@ -260,7 +271,7 @@ export default {
             if (!device || this.running[device]) return;
             this.running[device] = true;
             try {
-                await invoke("run_scrcpy", { args: scrcpy_start_args });
+                await invoke("run_scrcpy", { args: scrcpy_start_args, automaticScreen: this.automatic_screen && this.screen_control_allowed });
             } catch (e) {
                 this.launch_error = String(e);
             } finally {

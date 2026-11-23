@@ -27,6 +27,11 @@ pub fn adb_path() -> String {
     CUSTOM_ADB.lock().unwrap().clone().unwrap_or(default.to_string())
 }
 
+pub fn scrcpy_path() -> String {
+    let default = if cfg!(windows) { "scrcpy/scrcpy.exe" } else { "scrcpy" };
+    CUSTOM_SCRCPY.lock().unwrap().clone().unwrap_or(default.to_string())
+}
+
 fn parse_adb_version(output: &str) -> Result<serde_json::Value, String> {
     let protocol = output.lines().find_map(|line| line.strip_prefix("Android Debug Bridge version "));
     let Some(protocol) = protocol.filter(|value| !value.trim().is_empty()) else {
@@ -118,15 +123,14 @@ pub fn adb_display_help(device: &str) -> Result<String, String> {
 
 pub fn scrcpy(args: Vec<&str>) -> Result<String, String> {
     let _operation = if args == ["--version"] { None } else { Some(adb_server::begin(false)?) };
-    let default = if cfg!(windows) { "scrcpy/scrcpy.exe" } else { "scrcpy" };
-    let command = CUSTOM_SCRCPY.lock().unwrap().clone().unwrap_or(default.to_string());
+    let command = scrcpy_path();
     return execute(&command, args, false);
 }
 
-pub fn run_scrcpy(args: Vec<&str>) -> Result<String, String> {
+pub fn run_scrcpy(args: Vec<&str>, automatic_screen: bool) -> Result<String, String> {
     let _session = adb_server::begin(true)?;
-    let default = if cfg!(windows) { "scrcpy/scrcpy.exe" } else { "scrcpy" };
-    let command = CUSTOM_SCRCPY.lock().unwrap().clone().unwrap_or(default.to_string());
+    let command = scrcpy_path();
+    if automatic_screen { return crate::screen_power::run(&command, args); }
     execute(&command, args, true)
 }
 

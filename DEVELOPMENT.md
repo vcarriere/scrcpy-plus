@@ -58,7 +58,7 @@ buttons. The owner subsequently confirmed the Pixel appears in preview v3 after
 wireless discovery was recovered. Source and headless checks cover the controls;
 the full native/device acceptance checklist remains open, and the installed app
 is unchanged. Automatic ADB updates,
-native password/pattern unlock, automatic protected-screen power handling, friendly device
+native password/pattern unlock, friendly device
 labels, and physical-device grouping remain backlog work. Full child-process
 cancellation on app exit also remains open under item 06.
 
@@ -75,22 +75,25 @@ Set-Location src-tauri
 cargo test --lib
 ```
 
-- Twenty-four Rust tests cover passive protocol queries, a non-ADB endpoint, closed
+- Thirty-three Rust tests cover passive protocol queries, a non-ADB endpoint, closed
   ports, independent endpoints, paused-command/session guards, launch failure,
   unsuccessful exit status, automatic recovery, stale observations around Stop,
   known-peer learning, cache bounds/expiry, local subnet/server restrictions,
   discovery failures, request throttling, the mDNS wire question, binary server
   metadata with unknown/private fields, malformed metadata, and client release
-  parsing distinct from protocol version, secure-window flag parsing, unknown or
-  ambiguous windows, focus races, and read-only probe commands/capabilities.
-- Twelve headless Chromium tests exercise the actual built frontend with synthetic
+  parsing distinct from protocol version, secure-window/biometric parsing, unknown
+  or ambiguous windows, focus races, power-transition debounce, manual overrides,
+  fresh identity/protection checks, physical panel parsing, session ownership,
+  and cancellation of an actual owned query subprocess.
+- Fifteen headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
   offline/unauthorized states, an external restart automatically restoring device
   discovery and the enabled Stop control without an extra Start request,
   client/server version/path mismatches, unavailable legacy details, a missing
   client alongside a healthy server, protected-screen check gating, stale-device
-  results, visible errors, unsupported virtual displays, and a narrow layout.
+  results, visible errors, unsupported virtual/view-only sessions, automatic
+  session status and Pause/Resume, saved opt-in/default migration, and a narrow layout.
   These are simulated backend
   states, not evidence of device-side behavior.
 - `npm run test:adb` is an opt-in real ADB test. Set `SCRCPY_PLUS_TEST_ADB` to the
@@ -143,43 +146,82 @@ under `.tools/`, with their original licenses. The environment helper recognizes
 those paths without changing the system installation. These SDK packages and the
 portable Node runtime are not part of the app or the repository distribution.
 
-## Protected-screen detection prototype
+## Automatic screen power for protected windows and fingerprint prompts
 
-The owner's initial case is apps that show black video in scrcpy. A manual
-**Check protected screen** action now sits below **Turn off phone screen**,
-enabled when that parent option is selected for the main display. It is disabled
-for virtual displays, other selected display IDs, and OTG. It sends no power or
-input commands and does not start a background monitor. Automatic screen
-switching remains unavailable; the requested automatic checkbox is not presented
-as working before the detection/controller can be verified.
+**Temporarily turn on phone screen for protected screens** is an opt-in checkbox
+immediately below **Turn off phone screen**, using the original checkbox/button
+styles. It applies when a new mirror starts and can be remembered with SCRCPY
+config. Legacy configurations default to off. Virtual/other selected displays,
+view-only, OTG, video-disabled sessions, device-selector overrides, and disabled
+cleanup are rejected or disabled. Automatic mode requires the direct scrcpy
+executable; launcher/password wrappers are not assumed to own the real session.
+The existing helper and installed app are unchanged.
 
-The native probe reads `dumpsys window displays`, extracts one validated focused
-window token, requests only that window's dump, and rechecks focus. It accepts
-complete symbolic/hex `mAttrs` flags only for display 0. Background windows,
-private flags, focus races, malformed/truncated dumps, and ambiguous displays
-cannot turn into a positive result. The UI reports **secure**, **unflagged**, or
-**unknown**, and ignores results after the selected device/parent option changes.
-A missing flag does not establish that mirroring is allowed: secure surfaces,
-sensitive-content policy, and other black-video causes are outside this probe.
-Raw window dumps, app names, and focus tokens are never returned to the frontend
-or saved. The whole read uses the same native intentional-Stop operation gate.
+The native controller reads visible main-display windows. A complete secure
+window flag or a visible, correctly owned/typed SystemUI BiometricPrompt can
+request physical On, even if the prompt overlays another focused app. Entry is
+prompt; exit requires one second of confirmed clear observations, restarted by
+unknown/protected observations. Power changes recheck device serial, current
+Android user, fresh protection, logical wakefulness, and actual panel state.
+It never decides from black video pixels and does not unblock protected capture.
+Secure surfaces/policies without an observable window signal, vendor/keyguard
+variants, and multiple physical panels still need broader compatibility work.
 
-SDK and display-help commands provide read-only capability hints. The tested
-Android 17 / SDK 37 phone advertised `power-reset` and `power-off`, without
-`power-on`; this differs from the scrcpy documentation's on/off example. Its
-display help also exited 255 despite printing valid help. A narrow native helper
-accepts stdout for that exact read-only help request; ordinary unsuccessful ADB
-commands still report errors. Capability advertisement is not proof that a
-physical on/off/restoration sequence works.
+Physical power is read from the filtered `SurfaceFlinger --displays` power modes,
+excluding virtual displays, rather than DisplayManager's cached screen state.
+On the tested Android 17 / SDK 37 phone, scrcpy's initial direct SurfaceFlinger
+Off left the framework cache On. A `power-reset` alone therefore did not light
+the panel. Synchronizing `cmd display power-off 0` first, then the advertised
+On/Reset command, produced verified On. The opposite transition uses explicit
+Off. These operations do not send a blind power-key toggle. SDK, command help,
+and readable physical state are checked before launch; Android 15+ is required.
+The phone advertises `power-reset`/`power-off`, and its help exits 255 despite
+printing valid help. Only the exact read-only help request accepts that status.
 
-The opt-in test `protected_screen::tests::inspect_live_device_without_changing_it`
-requires `SCRCPY_PLUS_TEST_ADB` and an explicitly selected
-`SCRCPY_PLUS_TEST_DEVICE`. It passed on the existing phone: the current focused
-main window was readable and unflagged, with `reset_off` capabilities. The shared
-server process stayed unchanged and no input or display-power action was sent.
-Actual protected-app transitions have not been tested. Next: validate those
-transitions, then add a cancellable session-owned power controller, debounce,
-manual overrides, and restoration before exposing the automatic option.
+Each automatic session captures its ADB executable/server endpoint, owns the
+actual scrcpy child, and keeps the native session/Stop gate until it ends. Only
+one controller may own a physical serial across routes. Queries have bounded
+output/time and observe child exit, GUI shutdown, and explicit Pause; cancellation
+kills only the owned short client, never the shared server. Sleep or external
+panel changes pause control instead of fighting the owner. Pause leaves the
+current panel under manual control; Resume explicitly authorizes control again.
+Unreadable state/power failures pause with visible status and a recovery action.
+Raw window dumps, app names, and hardware identity stay out of frontend status
+and logs; only the already selected transport identifies its session in the GUI.
+
+Closing a mirror ends its monitor and lets normal scrcpy cleanup restore the
+device, including its power-off-on-close setting. Closing the GUI stops monitors
+with a bounded wait; an owned temporary On can be restored to the Off baseline
+after identity/awake/state checks. Existing mirror windows can remain open as
+before, but automatic switching ends with the GUI. No blanket server shutdown or
+termination of unrelated processes is performed. Native password monitoring must
+reuse this lifecycle/ownership model when item 03 is implemented.
+
+The manual **Check protected screen** action remains a read-only diagnostic of
+the focused window. It returns secure/unflagged/unknown, rechecks focus, and
+discards stale-device responses. An unflagged result is not proof that mirroring
+is allowed. It does not change power or start monitoring.
+
+Opt-in live tests require explicit `SCRCPY_PLUS_TEST_ADB`,
+`SCRCPY_PLUS_TEST_SCRCPY`, and `SCRCPY_PLUS_TEST_DEVICE`. They are excluded from
+normal checks:
+
+- `screen_power::tests::live_display_power_cycle` verified physical On then Off
+  in a headless mirror and restored an initially sleeping device afterward.
+- `screen_power::tests::live_automatic_session`, with a bounded duration, ran the
+  actual controller. Authenticator entry turned the panel On; returning Home
+  restored Off. Wi-Fi sharing's visible fingerprint prompt also turned it On;
+  cancelling that prompt restored Off without authenticating. Both were verified
+  by the actual panel mode, not a simulated backend or an owner's visual report.
+  The shared ADB process stayed running and test-owned mirrors exited.
+- The fixture options `SCRCPY_PLUS_TEST_RETURN_HOME=1` and
+  `SCRCPY_PLUS_TEST_CANCEL_BIOMETRIC=1` perform guarded Home/Back test transitions
+  only from the expected app/prompt. They are test-only and are not part of the
+  production controller. No credential, Wi-Fi QR code, or video frame was read,
+  recorded, or published for these tests.
+
+The live passes used ADB 37.0.3 and scrcpy 5.0.1 on the selected phone. Cross-build
+and additional vendor/DRM cases are not established by these results.
 
 ## Recurring wireless discovery investigation and recovery
 
@@ -260,6 +302,9 @@ references (not copied implementations):
   and [DisplayManagerShellCommand](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/display/DisplayManagerShellCommand.java)
   are API/output references, not copied implementation code.
 - [scrcpy physical screen controls](https://github.com/Genymobile/scrcpy/blob/master/doc/device.md#turn-screen-off).
+- [SurfaceFlinger display dumps](https://android.googlesource.com/platform/frameworks/native/+/refs/heads/android16-release/services/surfaceflinger/SurfaceFlinger.cpp)
+  and [SystemUI biometric prompt window](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/packages/SystemUI/src/com/android/systemui/biometrics/AuthContainerView.java)
+  are output/layout references. Controller and parser code are original fork work.
 
 Dependency license files remain in their packages. The newly added discovery
 libraries' MIT notices are also retained in THIRD_PARTY_NOTICES.md and copied

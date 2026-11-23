@@ -4,6 +4,10 @@ import { mkdir } from "node:fs/promises";
 async function mock(page, options = {}) {
     await page.addInitScript(options => {
         localStorage.setItem("setting.disable_update_check", "true");
+        if (options.remember_config) {
+            localStorage.setItem("setting.save_scrcpy_config", "true");
+            localStorage.setItem("scrcpyplus.scrcpy_config", JSON.stringify(options.saved_config || {}));
+        }
         const state = window.adb_test = {
             server: "running", paused: false, sessions: 0, calls: [], devices: "", fail: false,
             details: { version: "37.0.3", build: "1234", path: "C:\\SCRCPY+\\adb.exe" },
@@ -13,11 +17,18 @@ async function mock(page, options = {}) {
             state: state.server, paused: state.paused, active_sessions: state.sessions,
             endpoint: "tcp:localhost:5037", path: "C:\\SCRCPY+\\adb.exe", protocol_version: state.server === "running" ? 41 : null,
             server_details: state.server === "running" ? state.details : null,
+            screen_sessions: (state.screen_sessions || []).map(session => ({ ...session })),
         });
         window.__TAURI_INTERNALS__ = { invoke: async (command, args = {}) => {
             state.calls.push({ command, args });
             if (command === "set_binary_paths") return;
             if (command === "get_adb_client") return state.client;
+            if (command === "control_screen_power") {
+                const session = state.screen_sessions.find(session => session.id === args.id);
+                session.state = args.paused ? "paused" : "monitoring";
+                session.reason = args.paused ? "requested" : "watching";
+                return;
+            }
             if (command === "inspect_protected_screen") {
                 if (state.screen_fail) throw "Simulated protected-screen query failure";
                 if (state.screen_deferred) return new Promise(resolve => { state.finish_screen = () => resolve(state.screen || { state: "secure" }); });
@@ -41,7 +52,11 @@ async function mock(page, options = {}) {
                 if (args.args[0] === "devices") return "List of devices attached\n" + state.devices;
                 return "Synthetic device property";
             }
-            if (command === "run_scrcpy") throw "Simulated launch failure";
+            if (command === "run_scrcpy") {
+                if (!state.mirror_pending) throw "Simulated launch failure";
+                if (args.automaticScreen) state.screen_sessions = [{ id: 7, device: args.args[1], state: "screen_on", reason: "protected" }];
+                return new Promise(resolve => { state.finish_mirror = () => { state.screen_sessions = []; resolve(); }; });
+            }
             throw "Unexpected command: " + command;
         } };
     }, options);
@@ -221,4 +236,64 @@ test("detection errors are visible and virtual displays do not use the main-disp
     await page.getByRole("checkbox", { name: /^Virtual display/ }).check();
     await expect(check).toBeDisabled();
     await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
+test("automatic screen switching is opt-in and follows the native mirroring session", async ({ page }) => {
+    await mock(page, { devices: "synthetic-device\tdevice\n", mirror_pending: true });
+    await page.goto("/");
+    const automatic = page.getByRole("checkbox", { name: "Temporarily turn on phone screen for protected screens", exact: true });
+    await expect(automatic).not.toBeChecked();
+    await expect(automatic).toBeDisabled();
+    await page.getByRole("checkbox", { name: /^Turn off phone screen/ }).check();
+    await automatic.check();
+    await page.getByRole("button", { name: "Start SCRCPY", exact: true }).click();
+    await expect(automatic).toBeDisabled();
+    await expect(page.getByText("Phone screen on for protected content or a fingerprint prompt.", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => adb_test.calls.find(call => call.command === "run_scrcpy").args.automaticScreen)).toBe(true);
+    await page.getByRole("button", { name: "Pause screen switching", exact: true }).click();
+    await expect(page.getByText("Automatic screen switching is paused.", { exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Resume screen switching", exact: true }).click();
+    await expect(page.getByText("Automatic screen switching is active.", { exact: true })).toBeVisible();
+    await page.evaluate(() => { adb_test.screen_sessions[0].state = "paused"; adb_test.screen_sessions[0].reason = "manual_override"; });
+    await expect(page.getByText(/The phone went to sleep or screen power changed elsewhere/)).toBeVisible();
+    await page.evaluate(() => { adb_test.screen_sessions[0].state = "error"; adb_test.screen_sessions[0].reason = "power_failed"; });
+    await expect(page.getByText("Automatic screen switching needs attention.", { exact: true })).toBeVisible();
+    await expect(page.getByText(/The display change or device identity could not be verified/)).toBeVisible();
+    await page.evaluate(() => { adb_test.screen_sessions[0].state = "paused"; adb_test.screen_sessions[0].reason = "manual_override"; });
+    await expect(page.getByText("Automatic screen switching is paused.", { exact: true })).toBeVisible();
+    await page.setViewportSize({ width: 380, height: 800 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.locator(".card").filter({ has: page.getByText("Launch Options", { exact: true }) }).screenshot({ path: "../artifacts/automatic-screen-switching-preview.png" });
+    await page.evaluate(() => adb_test.finish_mirror());
+    await expect(automatic).toBeEnabled();
+    await expect(page.getByText("Automatic screen switching is paused.", { exact: true })).toHaveCount(0);
+});
+
+test("incompatible view-only sessions cannot enable automatic screen control", async ({ page }) => {
+    await mock(page, { devices: "synthetic-device\tdevice\n" });
+    await page.goto("/");
+    await page.getByRole("checkbox", { name: /^Turn off phone screen/ }).check();
+    const automatic = page.getByRole("checkbox", { name: "Temporarily turn on phone screen for protected screens", exact: true });
+    await automatic.check();
+    await page.getByRole("checkbox", { name: /^View only/ }).check();
+    await expect(automatic).toBeDisabled();
+    await page.getByRole("button", { name: "Start SCRCPY", exact: true }).click();
+    await expect(page.getByRole("alert")).toHaveText("Simulated launch failure");
+    expect(await page.evaluate(() => adb_test.calls.find(call => call.command === "run_scrcpy").args.automaticScreen)).toBe(false);
+});
+
+test("remembered configurations preserve the opt-in and legacy configurations default to off", async ({ page }) => {
+    await mock(page, { devices: "synthetic-device\tdevice\n", remember_config: true, saved_config: { active_args: ["--turn-screen-off"] } });
+    await page.goto("/");
+    const automatic = page.getByRole("checkbox", { name: "Temporarily turn on phone screen for protected screens", exact: true });
+    await expect(automatic).not.toBeChecked();
+    await automatic.check();
+    expect(await page.evaluate(() => JSON.parse(localStorage.getItem("scrcpyplus.scrcpy_config")).automatic_screen)).toBe(true);
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await page.locator('a[href="/"]').click();
+    await expect(automatic).toBeChecked();
+    await automatic.uncheck();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    await page.locator('a[href="/"]').click();
+    await expect(automatic).not.toBeChecked();
 });
