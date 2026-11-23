@@ -348,6 +348,10 @@ and allows multiline labels. Manual checks show a progress message and checked
 time, making a snapshot distinguishable from automatic session status. Changing
 device/availability clears pending UI state; an older reply cannot overwrite or
 clear a newer check's progress. Visible feedback keeps the original app styling.
+The owner then retried preview v11 and confirmed that Authenticator reports as
+protected and the Pause/Check buttons are clearly separated. The running test
+app and mirror were verified as v11. Its executable was built from clean code
+commit `310429d`; all 18 artifact hashes and the Windows x64 GUI format passed.
 
 Opt-in live tests require explicit `SCRCPY_PLUS_TEST_ADB`,
 `SCRCPY_PLUS_TEST_SCRCPY`, and `SCRCPY_PLUS_TEST_DEVICE`. They are excluded from

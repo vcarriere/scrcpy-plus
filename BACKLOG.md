@@ -177,6 +177,8 @@ biometric overlays, logical sleep, and physical panel power are separate signals
       It does not change screen power. Show explicit progress and checked time,
       with independently spaced Pause/Resume and Check buttons.
       The owner selected apps that show black video in scrcpy as the first case.
+      The v11 app retry confirmed Authenticator reports as protected and the
+      Pause/Check buttons are clearly separated.
 - [x] Immediately below **Turn off phone screen**, add a dependent, opt-in option:
       **Temporarily turn on phone screen for protected screens**.
       Disable it unless the parent option is selected.
