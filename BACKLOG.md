@@ -351,6 +351,46 @@ verified the enrolled identity; the server was not restarted.
 Manual reconnection is a recovery, not a completed fix. Keep personal addresses,
 device IDs, pairing material, and raw private logs out of the public repository.
 
+## Settings clarity
+
+### 14. Clearly show when bundled executable defaults are in use
+
+- [ ] Change the SCRCPY and ADB executable fields so an empty custom override
+      clearly says **Using bundled default**, rather than suggesting an executable
+      is missing. Distinguish a valid default from an unavailable executable.
+- [ ] Show the effective executable path and whether it comes from the bundled
+      runtime or a custom selection. Keep custom path selection and reset clear.
+- [ ] Check a fresh test profile, an existing custom password wrapper, a custom
+      ADB executable, and an invalid/missing saved path. Displayed information
+      must match the actual executable used by the backend.
+
+### 15. Use an affirmative Check for updates setting
+
+- [ ] Rename **Do not check for updates** to **Check for updates** and invert
+      the checkbox/storage logic to match: checked enables checks, unchecked
+      disables them. A fresh profile should have the setting checked by default.
+- [ ] Preserve the current effective default, which already allows update checks.
+      Migrate an existing negative setting by inverting its stored value; someone
+      who disabled update checks must keep them disabled after the wording change.
+- [ ] Update every read/write path and translation consistently. Verify new-profile
+      defaults, both legacy values, checkbox changes, and persistence after restart;
+      disabled checks must not issue release-check requests.
+
+### 16. Keep the viewport steady when toggling Advanced ADB controls
+
+- [ ] Reproduce the screen movement when **Show advanced ADB controls** inserts
+      the ADB panel above the current position. Keep the toggle and current reading
+      position at the same viewport location when content is added or removed.
+- [ ] Consider placing the revealed panel below its toggle or preserving a stable
+      visible element as the scroll anchor. Avoid unexpected scrolling, focus
+      changes, and layout animations that move the user's place on the page.
+- [ ] Check enabling and disabling while scrolled down, keyboard activation,
+      narrow windows, and display scaling. Account for the browser's scroll limits
+      when hiding content reduces the page height.
+
+Acceptance: toggling the setting leaves the user's visible position and focus
+stable wherever the available page height allows it.
+
 ## Delivery order and verification
 
 Begin the bug review (09) before feature work; carry its confirmed fixes through
