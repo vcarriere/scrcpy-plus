@@ -169,6 +169,12 @@ Priority: feasibility investigation before implementation. The likely Android
 term is a **secure window** (`FLAG_SECURE`); lock-screen/keyguard state and physical
 display power are separate signals.
 
+- [x] Start a manual, read-only **Check protected screen** action directly below
+      **Turn off phone screen**, using the existing app's styling. Inspect only
+      the selected device's focused main-display window and return secure flag,
+      unflagged, or unknown. Recheck focus, reject ambiguous/other displays, and
+      discard results after selection changes. It does not change screen power.
+      The owner selected apps that show black video in scrcpy as the first case.
 - [ ] Immediately below **Turn off phone screen**, add a dependent, opt-in option:
       **Temporarily turn on phone screen for protected screens**.
       Disable it unless the parent option is selected.
@@ -177,8 +183,10 @@ display power are separate signals.
       the panel on does **not** remove Android screenshot/mirroring protection.
 - [ ] First establish whether the focused window's secure state can be observed
       reliably with the available shell permissions on supported Android versions.
-      No reliable generic signal is established by this backlog. A black frame
-      alone is not proof of a protected screen.
+      The prototype can read a focused window's flag on the tested phone, but
+      this is not a universal secure-surface detector. An unflagged window can
+      still contain protected surfaces or be affected by device policy. A black
+      frame alone is not proof of a protected screen.
 - [ ] If automatic detection is unavailable, mark it unsupported and offer manual
       screen power. Consider clearly labelled user-selected app rules separately;
       app identity is not equivalent to detecting a secure window.
@@ -186,6 +194,9 @@ display power are separate signals.
       toggle. Capability-check the selected Android version and display. Upstream
       scrcpy documents `cmd display power-on/off` for Android 15 and later;
       older versions need a validated compatible implementation.
+      The tested Android 17 phone advertises `power-reset` and `power-off`, not
+      `power-on`; validate the actual command capabilities and restoration
+      semantics instead of assuming the SDK version guarantees an on/off pair.
 - [ ] Use one session power controller for this feature and password recovery.
       Suspend screen-off restoration during the temporary-on state; prevent
       flicker on rapid transitions and restore only changes owned by this feature.
@@ -199,7 +210,11 @@ without repeated toggling or conflicts with re-unlock. Record separately whether
 the protected content remains blocked in the mirror, as Android may require.
 
 Source starting points: `application/app/components/scrcpy_config.vue`, English,
-Italian, and Japanese locale files, and the session lifecycle from items 03/06.
+Italian, and Japanese locale files, `protected_screen_check.vue`, native
+`protected_screen.rs`, and the session lifecycle from items 03/06. Synthetic
+secure/unflagged/unknown, focus changes, other windows, and display restrictions
+are covered. A live read of the phone's current unflagged main window passed;
+actual black-screen app transitions and physical power behavior remain untested.
 
 ## Supporting fixes found while inspecting upstream
 

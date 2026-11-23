@@ -1,4 +1,10 @@
 {
+    "protected_screen_title": "保護された画面",
+    "protected_screen_description": "画面の電源を変えずに現在のウィンドウを確認します。自動切り替えは未対応です。保護された内容は scrcpy で黒く表示される場合があります。",
+    "protected_screen_check": "画面の保護状態を確認",
+    "protected_screen_secure": "メインディスプレイのウィンドウで保護フラグが検出されました。",
+    "protected_screen_unflagged": "ウィンドウの保護フラグは検出されませんでした。他の保護機能や映像が黒くなる原因は残る場合があります。",
+    "protected_screen_unknown": "現在のウィンドウの保護フラグを確認できませんでした。ウィンドウが切り替わったか、このディスプレイが未対応の可能性があります。",
     "adb_selected_executable": "選択中の ADB 実行ファイル",
     "adb_client_version": "クライアントのバージョン",
     "adb_server_version": "実行中のサーバーのバージョン",

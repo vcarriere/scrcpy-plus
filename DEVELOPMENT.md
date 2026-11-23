@@ -58,7 +58,7 @@ buttons. The owner subsequently confirmed the Pixel appears in preview v3 after
 wireless discovery was recovered. Source and headless checks cover the controls;
 the full native/device acceptance checklist remains open, and the installed app
 is unchanged. Automatic ADB updates,
-native password/pattern unlock, protected-screen power handling, friendly device
+native password/pattern unlock, automatic protected-screen power handling, friendly device
 labels, and physical-device grouping remain backlog work. Full child-process
 cancellation on app exit also remains open under item 06.
 
@@ -75,20 +75,23 @@ Set-Location src-tauri
 cargo test --lib
 ```
 
-- Twenty Rust tests cover passive protocol queries, a non-ADB endpoint, closed
+- Twenty-four Rust tests cover passive protocol queries, a non-ADB endpoint, closed
   ports, independent endpoints, paused-command/session guards, launch failure,
   unsuccessful exit status, automatic recovery, stale observations around Stop,
   known-peer learning, cache bounds/expiry, local subnet/server restrictions,
   discovery failures, request throttling, the mDNS wire question, binary server
   metadata with unknown/private fields, malformed metadata, and client release
-  parsing distinct from protocol version.
-- Nine headless Chromium tests exercise the actual built frontend with synthetic
+  parsing distinct from protocol version, secure-window flag parsing, unknown or
+  ambiguous windows, focus races, and read-only probe commands/capabilities.
+- Twelve headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
   offline/unauthorized states, an external restart automatically restoring device
   discovery and the enabled Stop control without an extra Start request,
   client/server version/path mismatches, unavailable legacy details, a missing
-  client alongside a healthy server, and a narrow layout. These are simulated backend
+  client alongside a healthy server, protected-screen check gating, stale-device
+  results, visible errors, unsupported virtual displays, and a narrow layout.
+  These are simulated backend
   states, not evidence of device-side behavior.
 - `npm run test:adb` is an opt-in real ADB test. Set `SCRCPY_PLUS_TEST_ADB` to the
   full path of an existing ADB executable before running it. It uses temporary
@@ -139,6 +142,44 @@ was unavailable. Optional, untracked local development packages used:
 under `.tools/`, with their original licenses. The environment helper recognizes
 those paths without changing the system installation. These SDK packages and the
 portable Node runtime are not part of the app or the repository distribution.
+
+## Protected-screen detection prototype
+
+The owner's initial case is apps that show black video in scrcpy. A manual
+**Check protected screen** action now sits below **Turn off phone screen**,
+enabled when that parent option is selected for the main display. It is disabled
+for virtual displays, other selected display IDs, and OTG. It sends no power or
+input commands and does not start a background monitor. Automatic screen
+switching remains unavailable; the requested automatic checkbox is not presented
+as working before the detection/controller can be verified.
+
+The native probe reads `dumpsys window displays`, extracts one validated focused
+window token, requests only that window's dump, and rechecks focus. It accepts
+complete symbolic/hex `mAttrs` flags only for display 0. Background windows,
+private flags, focus races, malformed/truncated dumps, and ambiguous displays
+cannot turn into a positive result. The UI reports **secure**, **unflagged**, or
+**unknown**, and ignores results after the selected device/parent option changes.
+A missing flag does not establish that mirroring is allowed: secure surfaces,
+sensitive-content policy, and other black-video causes are outside this probe.
+Raw window dumps, app names, and focus tokens are never returned to the frontend
+or saved. The whole read uses the same native intentional-Stop operation gate.
+
+SDK and display-help commands provide read-only capability hints. The tested
+Android 17 / SDK 37 phone advertised `power-reset` and `power-off`, without
+`power-on`; this differs from the scrcpy documentation's on/off example. Its
+display help also exited 255 despite printing valid help. A narrow native helper
+accepts stdout for that exact read-only help request; ordinary unsuccessful ADB
+commands still report errors. Capability advertisement is not proof that a
+physical on/off/restoration sequence works.
+
+The opt-in test `protected_screen::tests::inspect_live_device_without_changing_it`
+requires `SCRCPY_PLUS_TEST_ADB` and an explicitly selected
+`SCRCPY_PLUS_TEST_DEVICE`. It passed on the existing phone: the current focused
+main window was readable and unflagged, with `reset_off` capabilities. The shared
+server process stayed unchanged and no input or display-power action was sent.
+Actual protected-app transitions have not been tested. Next: validate those
+transitions, then add a cancellable session-owned power controller, debounce,
+manual overrides, and restoration before exposing the automatic option.
 
 ## Recurring wireless discovery investigation and recovery
 
@@ -213,6 +254,12 @@ references (not copied implementations):
   Version 0.15.0 was checked against its official package release metadata.
 - Google's [Platform-Tools release notes](https://developer.android.com/tools/releases/platform-tools)
   and [ADB documentation](https://developer.android.com/tools/adb).
+- Android's [FLAG_SECURE documentation](https://developer.android.com/reference/android/view/WindowManager.LayoutParams#FLAG_SECURE),
+  [WindowState](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/WindowState.java),
+  [WindowManagerService](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/wm/WindowManagerService.java),
+  and [DisplayManagerShellCommand](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/services/core/java/com/android/server/display/DisplayManagerShellCommand.java)
+  are API/output references, not copied implementation code.
+- [scrcpy physical screen controls](https://github.com/Genymobile/scrcpy/blob/master/doc/device.md#turn-screen-off).
 
 Dependency license files remain in their packages. The newly added discovery
 libraries' MIT notices are also retained in THIRD_PARTY_NOTICES.md and copied

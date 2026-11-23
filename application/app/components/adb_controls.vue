@@ -4,7 +4,7 @@
             <p class="card-title text-white">ADB <adb_status class="text-sm font-normal ml-auto" /></p>
             <dl class="space-y-2 min-w-0">
                 <div><dt class="font-bold">{{ $t('adb_selected_executable') }}</dt><dd class="break-all">{{ client.path || status.path }}</dd></div>
-                <div><dt class="font-bold">{{ $t('adb_client_version') }}</dt><dd>{{ client_loading ? $t('loading') : client.version || client.protocol_version || $t('adb_details_unavailable') }}</dd></div>
+                <div><dt class="font-bold">{{ $t('adb_client_version') }}</dt><dd>{{ client_loading ? $t('loading') : client.version || $t('adb_details_unavailable') }}</dd></div>
                 <div><dt class="font-bold">{{ $t('adb_endpoint') }}</dt><dd class="break-all">{{ status.endpoint }}</dd></div>
                 <template v-if="status.state === 'running'">
                     <div><dt class="font-bold">{{ $t('adb_server_version') }}</dt><dd>{{ server_version || $t('adb_details_unavailable') }}</dd></div>

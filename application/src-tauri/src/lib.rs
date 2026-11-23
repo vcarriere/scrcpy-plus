@@ -3,6 +3,7 @@ mod system_command;
 mod downloader;
 mod adb_server;
 mod mdns_discovery;
+mod protected_screen;
 use tauri::Manager;
 use system_command::{ scrcpy, adb };
 
@@ -99,6 +100,11 @@ async fn get_adb_client() -> Result<Value, String> {
 }
 
 #[tauri::command]
+async fn inspect_protected_screen(device: String) -> Result<protected_screen::Observation, String> {
+  tauri::async_runtime::spawn_blocking(move || protected_screen::inspect(&device)).await.map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
 async fn control_adb(start: bool) -> Result<Value, String> {
   tauri::async_runtime::spawn_blocking(move || {
     let mut change = adb_server::change(start)?;
@@ -127,7 +133,7 @@ pub fn run() {
     })
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
-    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb])
+    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

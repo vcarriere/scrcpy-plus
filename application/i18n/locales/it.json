@@ -1,4 +1,10 @@
 {
+    "protected_screen_title": "Schermate protette",
+    "protected_screen_description": "Controlla la finestra attuale senza modificare lo stato dello schermo. Il cambio automatico non è ancora disponibile; i contenuti protetti possono restare neri in scrcpy.",
+    "protected_screen_check": "Controlla schermata protetta",
+    "protected_screen_secure": "Rilevato un flag di finestra sicura sul display principale.",
+    "protected_screen_unflagged": "Nessun flag di finestra sicura rilevato. Potrebbero esserci altre protezioni o cause del video nero.",
+    "protected_screen_unknown": "Impossibile determinare il flag della finestra attuale. La finestra potrebbe essere cambiata o il display potrebbe non essere supportato.",
     "adb_selected_executable": "Eseguibile ADB selezionato",
     "adb_client_version": "Versione del client",
     "adb_server_version": "Versione del server in esecuzione",

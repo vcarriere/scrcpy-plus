@@ -18,6 +18,11 @@ async function mock(page, options = {}) {
             state.calls.push({ command, args });
             if (command === "set_binary_paths") return;
             if (command === "get_adb_client") return state.client;
+            if (command === "inspect_protected_screen") {
+                if (state.screen_fail) throw "Simulated protected-screen query failure";
+                if (state.screen_deferred) return new Promise(resolve => { state.finish_screen = () => resolve(state.screen || { state: "secure" }); });
+                return state.screen || { state: "secure", reason: "focused_window_flag", android_sdk: 37, power_commands: "reset_off" };
+            }
             if (command === "get_adb_status") {
                 if (state.server === "running") state.paused = false;
                 return snapshot();
@@ -162,4 +167,58 @@ test("keeps legacy metadata and unavailable clients separate from server health"
     await expect(page.getByRole("status")).toHaveText("Stopped");
     await expect(page.getByText("Running server version", { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => adb_test.calls.some(call => call.command === "control_adb"))).toBe(false);
+});
+
+test("protected-screen detection is opt-in and does not send power commands", async ({ page }) => {
+    await mock(page, { devices: "synthetic-device\tdevice\n" });
+    await page.goto("/");
+    const check = page.getByRole("button", { name: "Check protected screen", exact: true });
+    await expect(check).toBeDisabled();
+    expect(await page.evaluate(() => adb_test.calls.some(call => call.command === "inspect_protected_screen"))).toBe(false);
+    await page.getByRole("checkbox", { name: /^Turn off phone screen/ }).check();
+    await check.click();
+    await expect(page.getByText("A secure window flag was detected on the main display.", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => adb_test.calls.filter(call => call.command === "inspect_protected_screen").map(call => call.args))).toEqual([{ device: "synthetic-device" }]);
+    expect(await page.evaluate(() => adb_test.calls.some(call => call.command === "run_scrcpy" || call.args.args?.some(arg => ["power-on", "power-off", "power-reset"].includes(arg))))).toBe(false);
+    await page.setViewportSize({ width: 380, height: 800 });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await page.locator(".card").filter({ has: page.getByText("Launch Options", { exact: true }) }).screenshot({ path: "../artifacts/protected-screen-check-preview.png" });
+});
+
+test("unflagged windows remain uncertain and stale device results are discarded", async ({ page }) => {
+    await mock(page, { devices: "synthetic-device\tdevice\nsecond-device\tdevice\n", screen: { state: "unflagged" } });
+    await page.goto("/");
+    await page.getByRole("tab", { name: "synthetic-device", exact: true }).click();
+    const parent = page.getByRole("checkbox", { name: /^Turn off phone screen/ });
+    const check = page.getByRole("button", { name: "Check protected screen", exact: true });
+    await parent.check();
+    await check.click();
+    await expect(page.getByText(/No secure window flag was found/)).toBeVisible();
+    await parent.uncheck();
+    await expect(page.getByText(/No secure window flag was found/)).toHaveCount(0);
+    await expect(check).toBeDisabled();
+    await parent.check();
+    await page.evaluate(() => { adb_test.screen = { state: "unexpected-state" }; });
+    await check.click();
+    await expect(page.getByText(/Could not determine the current window flag/)).toBeVisible();
+    await page.evaluate(() => { adb_test.screen = { state: "secure" }; adb_test.screen_deferred = true; });
+    await check.click();
+    await expect.poll(() => page.evaluate(() => typeof adb_test.finish_screen)).toBe("function");
+    await page.getByRole("tab", { name: "second-device", exact: true }).click();
+    await page.evaluate(() => adb_test.finish_screen());
+    await expect(page.getByText(/A secure window flag was detected/)).toHaveCount(0);
+    await expect(page.getByText(/Could not determine the current window flag/)).toHaveCount(0);
+});
+
+test("detection errors are visible and virtual displays do not use the main-display probe", async ({ page }) => {
+    await mock(page, { devices: "synthetic-device\tdevice\n", screen_fail: true });
+    await page.goto("/");
+    await page.getByRole("checkbox", { name: /^Turn off phone screen/ }).check();
+    const check = page.getByRole("button", { name: "Check protected screen", exact: true });
+    await check.click();
+    await expect(page.getByRole("alert")).toHaveText("Simulated protected-screen query failure");
+    await page.locator(".collapse").filter({ has: page.getByText("Display Settings", { exact: true }) }).locator('input[type="checkbox"]').first().check();
+    await page.getByRole("checkbox", { name: /^Virtual display/ }).check();
+    await expect(check).toBeDisabled();
+    await expect(page.getByRole("alert")).toHaveCount(0);
 });

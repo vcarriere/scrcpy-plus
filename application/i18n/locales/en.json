@@ -1,4 +1,10 @@
 {
+    "protected_screen_title": "Protected screens",
+    "protected_screen_description": "Checks the current window without changing screen power. Automatic switching is not ready; protected content may still appear black in scrcpy.",
+    "protected_screen_check": "Check protected screen",
+    "protected_screen_secure": "A secure window flag was detected on the main display.",
+    "protected_screen_unflagged": "No secure window flag was found. Other screen protection or causes of black video may still apply.",
+    "protected_screen_unknown": "Could not determine the current window flag. The window may have changed or this display may not be supported.",
     "adb_selected_executable": "Selected ADB executable",
     "adb_client_version": "Client version",
     "adb_server_version": "Running server version",

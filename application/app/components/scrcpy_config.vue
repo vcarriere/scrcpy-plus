@@ -5,13 +5,17 @@
             <p v-if="launch_error" class="text-error break-words" role="alert">{{ launch_error }}</p>
 
             <p class="mt-8 text-white">{{ $t('launch_options') }}</p>
-            <label v-for="option in basic_options" :key="option.arg" class="flex cursor-pointer">
-                <input type="checkbox" class="checkbox checkbox-primary" :value="option.arg" v-model="active_args" />
-                <div class="ml-2">
-                    <p class="text-white">{{ $t(`scrcpy_options.${option.arg}`) }}</p>
-                    <p>{{ $t(`scrcpy_flags.${option.arg}`) }}</p>
-                </div>
-            </label>
+            <template v-for="option in basic_options" :key="option.arg">
+                <label class="flex cursor-pointer">
+                    <input type="checkbox" class="checkbox checkbox-primary" :value="option.arg" v-model="active_args" />
+                    <div class="ml-2">
+                        <p class="text-white">{{ $t(`scrcpy_options.${option.arg}`) }}</p>
+                        <p>{{ $t(`scrcpy_flags.${option.arg}`) }}</p>
+                    </div>
+                </label>
+                <protected_screen_check v-if="option.arg === '--turn-screen-off'" :device="device"
+                    :enabled="active_args.includes('--turn-screen-off') && !virtual_display && (!custom_display_id || String(display_id) === '0') && !active_args.includes('--otg')" />
+            </template>
 
             <div class="collapse collapse-arrow bg-base-300">
                 <input type="checkbox" />

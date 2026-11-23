@@ -73,15 +73,27 @@ and password helper are not replaced or imported.
    most once every 30 seconds while the Devices page is active. It does not use
    an old debugging port. A changed IP or a first connection can still need the
    current endpoint manually. Intentional Stop also pauses this recovery.
+7. In Advanced ADB controls, compare the selected client's executable/version
+   with the running server's executable/version and endpoint. A different server
+   is explained; its binary does not prove which app started it. These details
+   must not start or replace the server.
+8. To try the first protected-screen prototype, select an online device on the
+   main page and check "Turn off phone screen". Open an affected app on the phone
+   yourself, then click "Check protected screen". This action only reads the
+   current focused main-display window flag. It does not turn the screen on/off.
+   A missing flag does not rule out other protection. Automatic switching is not
+   enabled yet; protected content can stay black in the mirror with the panel on.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI
 restart or manual Resume action is needed. The status check does not start or
 replace the ADB server itself.
 
-This build tests the ADB controls and known-address discovery recovery.
+This build tests the ADB controls, known-address discovery recovery, and manual
+protected-screen detection.
 Built-in password/pattern unlock, automatic
-updates, protected-screen handling and device grouping are not implemented yet.
+updates, automatic protected-screen power handling and device grouping are not
+implemented yet.
 The separate profile starts with default settings and does not automatically use
 the existing password wrapper. Close the test app when finished; your installed
 app is unchanged and can be opened normally.

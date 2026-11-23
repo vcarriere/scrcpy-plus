@@ -54,7 +54,7 @@ pub fn adb_client() -> serde_json::Value {
     }
 }
 
-fn execute(command: &str, args: Vec<&str>, session: bool) -> Result<String, String> {
+fn execute_output(command: &str, args: Vec<&str>, session: bool) -> Result<(std::process::ExitStatus, String), String> {
     let mut cmd = Command::new(&command);
     cmd.args(&args);
     #[cfg(windows)]
@@ -98,10 +98,22 @@ fn execute(command: &str, args: Vec<&str>, session: bool) -> Result<String, Stri
         }
         std::thread::sleep(Duration::from_millis(20));
     };
-    if !status.success() { return Err(format!("The selected executable exited with {}.", status)); }
-    if session { return Ok(String::new()); }
+    if session { return Ok((status, String::new())); }
     let output = receiver.recv_timeout(Duration::from_secs(1)).map_err(|_| "Could not read command output.")?;
-    Ok(String::from_utf8_lossy(&output).to_string())
+    Ok((status, String::from_utf8_lossy(&output).to_string()))
+}
+
+fn execute(command: &str, args: Vec<&str>, session: bool) -> Result<String, String> {
+    let (status, output) = execute_output(command, args, session)?;
+    if !status.success() { return Err(format!("The selected executable exited with {}.", status)); }
+    Ok(output)
+}
+
+pub fn adb_display_help(device: &str) -> Result<String, String> {
+    let _operation = adb_server::begin(false)?;
+    // Android's display help can exit 255 after printing valid help. Only this
+    // exact read-only help request accepts stdout from an unsuccessful exit.
+    execute_output(&adb_path(), vec!["-s", device, "shell", "cmd", "display", "help"], false).map(|(_, output)| output)
 }
 
 pub fn scrcpy(args: Vec<&str>) -> Result<String, String> {
