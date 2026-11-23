@@ -21,6 +21,11 @@ new backend code.
 - [ ] Show whether the host ADB server is **Running**, **Stopped**, **Starting**,
       **Stopping**, or **Unavailable / Error**. Distinguish an installed ADB
       executable from a running server and from connected/authorized devices.
+- [ ] Add a compact visual running/stopped indicator beside the ADB label, using
+      a dot, square, or badge that fits the app's existing style. Keep the basic
+      status easy to see, with detailed controls in Advanced. Include a text
+      label or accessible description so status does not depend on color alone;
+      reflect transitions and errors without implying a device is connected.
 - [ ] Show the selected ADB path and client version; include server version and
       endpoint when available. Explain conflicts with a server started by another
       tool instead of presenting every ADB process as ours.
@@ -39,8 +44,9 @@ new backend code.
 
 Acceptance: status refresh leaves a stopped server stopped; Start is idempotent;
 Stop remains effective beyond several refresh cycles; errors and external servers
-are represented accurately. Test with an isolated server endpoint before any
-shared-server test.
+are represented accurately. The visual indicator matches the observed server
+state and remains understandable without color. Test with an isolated server
+endpoint before any shared-server test.
 
 Source starting points: `application/app/pages/settings.vue`,
 `application/app/components/adb_check.vue`,
@@ -250,13 +256,67 @@ Priority: start before feature implementation and continue with each change.
 Acceptance: findings are tracked with evidence and disposition; each completed
 fix has verification results. Do not mark unresolved or untested behavior fixed.
 
+## Device list and connection presentation
+
+### 10. Review long mDNS names and improve device labels
+
+Priority: alongside device-state work. Owner report: long mDNS names currently
+look poor in the app; reproduce the layout issue before choosing the final design.
+
+- [ ] Review actual mDNS service names, their label lengths, and how they appear
+      in the device selector/tabs and device details. Distinguish technical DNS
+      label/name limits from the space available for readable UI labels.
+- [ ] Prefer a concise, recognizable device name in the selector, with a useful
+      disambiguator when devices share the same name/model. Keep the complete
+      mDNS name available in the connection details, with a way to copy it.
+- [ ] Check wrapping, truncation, spacing, and overflow at narrow window widths,
+      higher display scaling, and with multiple devices. Use the existing app's
+      typography and component styling; make shortened labels accessible beyond
+      a mouse-only hover tooltip.
+- [ ] Keep display labels separate from the exact ADB transport selector. Never
+      shorten or modify the identifier passed to ADB to make a label fit.
+
+Acceptance: long names no longer distort the layout; similar device names remain
+distinguishable, and the full connection identifier can still be inspected/copied.
+
+### 11. Investigate duplicate devices and group their connection paths
+
+Priority: alongside item 10. Owner report / possible fix: the same physical device
+can appear twice, once as an IP endpoint and once as an mDNS service. Confirm when
+this represents two routes to one device before merging entries.
+
+- [ ] Investigate how ADB reports USB, IP, and mDNS transports for the same device,
+      including whether an mDNS service resolves to an already listed IP endpoint.
+- [ ] Identify individual physical devices using verified identity information,
+      then show one device entry with its available connection paths in the device
+      information section below the selector. Do not merge devices solely because
+      they share a model, friendly name, or an IP address observed at another time.
+- [ ] List each route's connection type, complete transport selector/endpoint,
+      online/offline/unauthorized state, and which path is currently selected.
+      Let the user choose the path used to start a session and disconnect a
+      particular wireless route without hiding the device's remaining routes.
+- [ ] Preserve device selection as routes appear/disappear or wireless addresses
+      change. Represent uncertain identity separately until it can be verified;
+      unavailable identity must not cause automatic cross-device grouping.
+- [ ] Bind saved device settings and enrolled unlock credentials to verified
+      physical identity, then recheck the selected connection before any input.
+      Grouping must not weaken item 03's wrong-device protections.
+
+Acceptance: a verified device reachable by IP and mDNS appears once with both
+paths in its details; two devices of the same model remain separate. Check route
+loss/reconnect, USB plus wireless, unavailable identity, and intentional ADB Stop.
+
+Source starting point for items 10–11:
+`application/app/components/devices.vue`, which currently labels device tabs with
+the raw ADB selector and requests device properties per selected transport.
+
 ## Delivery order and verification
 
 Begin the bug review (09) before feature work; carry its confirmed fixes through
 the relevant steps below and repeat affected checks as features are added.
 
 1. ADB status/controls, polling semantics, and typed process/session results
-   (01, 06, 08).
+   (01, 06, 08), with device labels and connection grouping (10, 11).
 2. Independent ADB update staging, activation, rollback, and override preservation
    (02, 07).
 3. Native password parity with the existing helper (03).
