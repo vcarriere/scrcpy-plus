@@ -183,7 +183,7 @@ export default {
             this.bitrate = Number(event.target.value);
         },
         remember_enabled() {
-            return localStorage.getItem("setting.save_scrcpy_config") == "true";
+            return localStorage.getItem("setting.save_scrcpy_config") !== "false";
         },
         save_config() {
             if (!this.remember_enabled()) {

@@ -90,7 +90,7 @@ cargo test --lib
   executable resolution, missing/deleted overrides, wrapper non-execution,
   shared manual/automatic protection signals, stable visible-window snapshots,
   captured-client deadlines, and cancellation of stalled optional metadata.
-- Forty-nine headless Chromium tests exercise the actual built frontend with synthetic
+- Fifty headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
   offline/unauthorized states, an external restart automatically restoring device
@@ -185,7 +185,7 @@ The **Automatically check for updates** checkbox maps checked to the existing
 `setting.disable_update_check=false` value and unchecked to true. Keeping that
 key preserves preferences and compatibility with older previews. A missing key
 still enables checks and now appears checked. English, Italian, and Japanese
-labels are updated. **Check for updates now** runs the same SCRCPY+ app release
+labels are updated. **Check for updates** runs the same SCRCPY+ app release
 check whether automatic checks are on or off, without changing the preference.
 It shows progress, a newer stable release, up-to-date status, or a retryable error.
 Manual and automatic checks share their pending request and result across pages;
@@ -196,7 +196,14 @@ under item 15. Disabled automatic checks make no background app-release request;
 explicit manual checks remain available. No automatic installation was introduced.
 The manual button sits alongside the automatic-check option at the normal window
 width and wraps below it on narrow windows. Progress and results stay below the
-controls. The existing 22 focused update/settings/scroll checks pass for this layout.
+controls. Its **Check for updates** label and height match the compact toggle row,
+including larger text sizes.
+
+Fresh profiles enable automatic update checks and Remember SCRCPY config and hide
+advanced controls. The Settings checkbox and SCRCPY configuration save/load logic
+both treat a missing remember preference as enabled. Explicit saved false/true
+choices remain effective. These preferences and the saved SCRCPY configuration
+live in the WebView's localStorage; there is no separate settings-default file.
 
 The shared ADB status marker uses the existing theme's primary purple in both
 the main-page version information and Advanced ADB controls. Running/Stopped text

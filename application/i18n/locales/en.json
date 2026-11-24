@@ -50,7 +50,7 @@
     "settings": "Settings",
     "language": "Language",
     "check_updates": "Automatically check for updates",
-    "check_updates_now": "Check for updates now",
+    "check_updates_now": "Check for updates",
     "updates_checking": "Checking for SCRCPY+ updates…",
     "updates_current": "SCRCPY+ is up to date.",
     "updates_check_failed": "Could not check for SCRCPY+ updates. Check your connection and try again.",

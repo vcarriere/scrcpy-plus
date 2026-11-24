@@ -3,7 +3,7 @@
         <div :class="manual ? 'flex flex-col items-start gap-2' : 'card-body'">
             <div v-if="manual" class="flex flex-wrap items-center gap-2 w-full">
                 <slot />
-                <button class="btn btn-primary text-white h-auto min-h-12 py-3" :disabled="updates.state === 'checking'" @click="check_updates">
+                <button class="btn btn-primary text-white h-6 min-h-0 px-3" :disabled="updates.state === 'checking'" @click="check_updates">
                     <span>{{ $t('check_updates_now') }}</span>
                 </button>
             </div>

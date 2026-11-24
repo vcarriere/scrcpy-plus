@@ -17,7 +17,7 @@ for (const disabled of [true, false]) {
         });
         await mock(page, { update_preference: disabled });
         await page.goto("/settings");
-        const button = page.getByRole("button", { name: "Check for updates now", exact: true });
+        const button = page.getByRole("button", { name: "Check for updates", exact: true });
         expect(requests).toEqual([]);
         await button.focus();
         await button.press("Enter");
@@ -51,7 +51,7 @@ test("a pending automatic check is shared with Settings and retains stable-relea
     await page.goto("/");
     await expect.poll(() => requests).toBe(1);
     await page.getByRole("link", { name: "Settings", exact: true }).click();
-    await expect(page.getByRole("button", { name: "Check for updates now", exact: true })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Check for updates", exact: true })).toBeDisabled();
     finish();
     await expect(page.getByRole("status")).toHaveText("Update Available");
     await expect(page.getByText("v3.10.0", { exact: true })).toBeVisible();
@@ -68,7 +68,7 @@ test("manual update results reach the existing home banner with automatic checks
     });
     await mock(page);
     await page.goto("/settings");
-    await page.getByRole("button", { name: "Check for updates now", exact: true }).click();
+    await page.getByRole("button", { name: "Check for updates", exact: true }).click();
     await expect(page.getByRole("status")).toHaveText("Update Available");
     await page.locator('a[href="/"]').click();
     await expect(page.getByText("Update Available", { exact: true })).toBeVisible();
@@ -86,7 +86,7 @@ test("a failed check reports an error and can be retried without automatic HTTP 
     });
     await mock(page);
     await page.goto("/settings");
-    const button = page.getByRole("button", { name: "Check for updates now", exact: true });
+    const button = page.getByRole("button", { name: "Check for updates", exact: true });
     await button.click();
     await expect(page.getByRole("alert")).toHaveText("Could not check for SCRCPY+ updates. Check your connection and try again.");
     await expect(button).toBeEnabled();
@@ -101,15 +101,15 @@ test("a feed without a stable release does not claim the app is up to date", asy
     await page.route(releases_url, route => route.fulfill({ json: [{ ...release, prerelease: true }] }));
     await mock(page);
     await page.goto("/settings");
-    await page.getByRole("button", { name: "Check for updates now", exact: true }).click();
+    await page.getByRole("button", { name: "Check for updates", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("Could not check for SCRCPY+ updates.");
     await expect(page.getByText("SCRCPY+ is up to date.", { exact: true })).toHaveCount(0);
 });
 
 for (const scenario of [
-    { locale: "en", width: 600, label: "Check for updates now" },
-    { locale: "it", width: 380, label: "Controlla gli aggiornamenti ora" },
-    { locale: "ja", width: 380, label: "今すぐ更新を確認する", scaled: true },
+    { locale: "en", width: 600, label: "Check for updates" },
+    { locale: "it", width: 380, label: "Controlla gli aggiornamenti" },
+    { locale: "ja", width: 380, label: "更新を確認する", scaled: true },
 ]) {
     test(`the ${scenario.locale} update controls fit the existing theme at ${scenario.width}px`, async ({ page }) => {
         await mock(page, { advanced_adb: true });
@@ -120,7 +120,9 @@ for (const scenario of [
         const button = page.getByRole("button", { name: scenario.label, exact: true });
         await expect(button).toBeVisible();
         const label_bounds = await page.getByRole("checkbox").first().locator("..").boundingBox();
+        const toggle_bounds = await page.getByRole("checkbox").first().boundingBox();
         const button_bounds = await button.boundingBox();
+        expect(Math.abs(button_bounds.height - toggle_bounds.height)).toBeLessThanOrEqual(1);
         if (scenario.width === 600) {
             expect(Math.abs(label_bounds.y + label_bounds.height / 2 - button_bounds.y - button_bounds.height / 2)).toBeLessThanOrEqual(1);
             expect(button_bounds.x - label_bounds.x - label_bounds.width).toBeGreaterThanOrEqual(7);

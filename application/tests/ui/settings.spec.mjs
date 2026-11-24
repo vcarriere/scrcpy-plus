@@ -11,8 +11,8 @@ test("executable defaults show their actual paths and do not launch tools", asyn
     await expect(page.getByLabel("ADB executable", { exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Manage versions", exact: true })).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Start ADB", exact: true })).toHaveCount(0);
-    await expect(page.getByRole("checkbox", { name: "Remember SCRCPY config", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Check for updates now", exact: true })).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: "Remember SCRCPY config", exact: true })).toBeChecked();
+    await expect(page.getByRole("button", { name: "Check for updates", exact: true })).toBeVisible();
     await mkdir("../artifacts", { recursive: true });
     await page.screenshot({ path: "../artifacts/settings-basic-preview.png", fullPage: true, animations: "disabled" });
     await advanced.check();
@@ -56,6 +56,30 @@ test("custom executables and password wrappers can reset independently without l
     await page.reload();
     await expect(page.getByText("Using bundled default", { exact: true })).toHaveCount(1);
     await expect(page.getByLabel("ADB executable", { exact: true })).toHaveValue(adb);
+});
+
+test("fresh profiles remember SCRCPY configuration and preserve an explicit opt-out", async ({ page }) => {
+    await mock(page, { devices: "synthetic-device\tdevice\n" });
+    await page.goto("/");
+    const mute = page.getByRole("checkbox", { name: /^Mute audio/ });
+    await mute.check();
+    await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("scrcpyplus.scrcpy_config"))?.active_args)).toContain("--no-audio");
+    expect(await page.evaluate(() => localStorage.getItem("setting.save_scrcpy_config"))).toBe(null);
+    await page.reload();
+    await expect(mute).toBeChecked();
+    await page.getByRole("link", { name: "Settings", exact: true }).click();
+    const remember = page.getByRole("checkbox", { name: "Remember SCRCPY config", exact: true });
+    await expect(remember).toBeChecked();
+    await remember.uncheck();
+    await page.reload();
+    await expect(remember).not.toBeChecked();
+    expect(await page.evaluate(() => localStorage.getItem("setting.save_scrcpy_config"))).toBe("false");
+    await page.locator('a[href="/"]').click();
+    await expect(mute).not.toBeChecked();
+    await mute.check();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem("scrcpyplus.scrcpy_config"))).toBe(null);
+    await page.reload();
+    await expect(mute).not.toBeChecked();
 });
 
 test("a missing saved custom executable explains the actual fallback", async ({ page }) => {
@@ -128,11 +152,11 @@ test("the affirmative update label and executable status are translated", async 
     await page.goto("/settings");
     await page.getByRole("combobox").selectOption("it");
     await expect(page.getByRole("checkbox", { name: "Controlla automaticamente gli aggiornamenti", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Controlla gli aggiornamenti ora", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Controlla gli aggiornamenti", exact: true })).toBeVisible();
     await page.getByRole("checkbox", { name: "Mostra i controlli avanzati", exact: true }).check();
     await page.getByRole("combobox").selectOption("ja");
     await expect(page.getByRole("checkbox", { name: "更新を自動的に確認する", exact: true })).toBeVisible();
-    await expect(page.getByRole("button", { name: "今すぐ更新を確認する", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "更新を確認する", exact: true })).toBeVisible();
     await expect(page.getByRole("checkbox", { name: "詳細設定を表示", exact: true })).toBeChecked();
     await expect(page.getByText("同梱の既定の実行ファイルを使用中", { exact: true })).toHaveCount(2);
     await expect(page.getByLabel("ADB 実行ファイル", { exact: true })).toBeVisible();

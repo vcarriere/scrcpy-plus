@@ -10,6 +10,9 @@ alwaysApply: true
   designated as advanced inside the same conditional section below the toggle card.
 - Keep language, automatic/manual update checks, and Remember SCRCPY config in
   the main settings section unless the owner requests a different classification.
+- Fresh profiles enable automatic update checks and Remember SCRCPY config and
+  hide advanced controls. Keep UI and save/load defaults consistent, preserving
+  explicit saved choices.
 - Preserve saved settings and active executable overrides when the section is
   hidden. The legacy `setting.advanced_adb` key stores the shared visibility choice
   for compatibility; hiding controls does not disable the underlying features.

@@ -410,6 +410,10 @@ device IDs, pairing material, and raw private logs out of the public repository.
 
 ## Settings clarity
 
+Implemented defaults: automatic update checks and Remember SCRCPY config are on;
+Show advanced controls is off. Existing saved choices are preserved. The compact
+manual **Check for updates** button sits alongside its automatic-check option.
+
 ### 14. Clearly show when bundled executable defaults are in use
 
 - [x] Change the SCRCPY and ADB executable fields so an empty custom override
@@ -431,7 +435,7 @@ The owner requested the automatic-check label and manual button now, using only
 the existing SCRCPY+ check. Expanded ADB/scrcpy update checks remain deferred.
 
 The agreed labels are **Automatically check for updates** for the toggle and
-**Check for updates now** for the manual button.
+**Check for updates** for the manual button.
 
 - [ ] Make the setting cover **both ADB and scrcpy updates**, in addition to the
       existing SCRCPY+ app update check. Use the official Google Platform-Tools
@@ -441,7 +445,7 @@ The agreed labels are **Automatically check for updates** for the toggle and
       scope is clear. It controls background checks, not automatic installation.
       Preserve the current preference and update all translations. Avoid
       **Automatic updates**, which could imply that updates install themselves.
-- [x] Add a **Check for updates now** button that works whether automatic checks
+- [x] Add a **Check for updates** button that works whether automatic checks
       are on or off, without changing that saved preference. Use the existing
       SCRCPY+ release source and show progress, available/current results, or an
       error with retry. Share pending checks across pages and disable duplicate

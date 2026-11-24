@@ -62,6 +62,8 @@ and password helper are not replaced or imported.
    executable locations, and Manage versions together. Language, update checks,
    and Remember SCRCPY config stay in the main section. Saved toggle choices and
    executable overrides are preserved when advanced controls are hidden.
+   A fresh profile enables automatic update checks and Remember SCRCPY config,
+   with advanced controls hidden. Existing saved choices are preserved.
 2. Check the ADB status dot and Running/Stopped text.
 3. With mirror sessions closed, click Stop ADB and confirm. This stops the shared
    ADB server and disconnects devices used by other apps too.
@@ -113,9 +115,10 @@ and password helper are not replaced or imported.
     explain their fallback; missing selected tools show Unavailable. Reset clears
     only that tool's override. Reading status does not execute either tool.
 13. "Automatically check for updates" controls the existing SCRCPY+ app check.
-    "Check for updates now" works whether that setting is on or off and leaves
+    "Check for updates" works whether that setting is on or off and leaves
     it unchanged. The button sits alongside the option and wraps below it in
-    narrow windows. It shows progress, current/newer-version results, or an error
+    narrow windows. Its compact height matches the toggle, including larger text.
+    It shows progress, current/newer-version results, or an error
     you can retry. Neither check installs updates. Expanded ADB/scrcpy update
     checks remain on the backlog. Running ADB markers use the app's purple theme
     in both the main-page version information and the advanced section's ADB card.

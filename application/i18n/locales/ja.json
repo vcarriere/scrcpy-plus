@@ -50,7 +50,7 @@
     "settings": "設定",
     "language": "言語",
     "check_updates": "更新を自動的に確認する",
-    "check_updates_now": "今すぐ更新を確認する",
+    "check_updates_now": "更新を確認する",
     "updates_checking": "SCRCPY+ の更新を確認しています…",
     "updates_current": "SCRCPY+ は最新です。",
     "updates_check_failed": "SCRCPY+ の更新を確認できませんでした。接続を確認して、もう一度お試しください。",

@@ -80,7 +80,7 @@ export default {
         return {
             settings: [
                 { key: "setting.disable_update_check", title: "check_updates", inverted: true, checked: localStorage.getItem("setting.disable_update_check") !== "true" },
-                { key: "setting.save_scrcpy_config",   title: "rscrcpy_config", checked: localStorage.getItem("setting.save_scrcpy_config") === "true" },
+                { key: "setting.save_scrcpy_config",   title: "rscrcpy_config", checked: localStorage.getItem("setting.save_scrcpy_config") !== "false" },
                 { key: "setting.advanced_adb", title: "advanced_setting", checked: localStorage.getItem("setting.advanced_adb") === "true" }
             ],
             is_windows: false,
