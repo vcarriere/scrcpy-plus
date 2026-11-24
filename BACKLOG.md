@@ -61,12 +61,18 @@ Source starting points: `application/app/pages/settings.vue`,
 `application/src-tauri/src/system_command.rs`, and
 `application/src-tauri/src/lib.rs`.
 
-### 02. Automatic ADB updates, independently of scrcpy
+### 02. ADB version selection and automatic updates, independently of scrcpy
 
 Priority: next, after item 01. Feasibility: practical; requires a dedicated updater.
 
 - [ ] Add automatic stable-version checks, **Check now**, installed/available
       versions, and a setting to enable automatic installation when idle.
+- [ ] Add an ADB version chooser alongside the existing scrcpy version manager
+      in the advanced section. Show installed, selected, and available supported
+      Platform-Tools/ADB releases; allow choosing a version independently of
+      scrcpy. Verify package availability and authenticity for older versions
+      before listing them as installable. Apply the manual-version and downgrade
+      behavior in item 07 to both tools.
 - [ ] Use Google's official SDK Platform-Tools downloads and release metadata.
       Check the package revision/build as well as the ADB protocol version:
       `1.0.41` alone does not identify the Platform-Tools release.
@@ -254,7 +260,7 @@ cases stay responsive after retrying the screen switches.
 
 This is a prerequisite for dependable native unlock and useful ADB error status.
 
-### 07. Make updates preserve working tools and overrides
+### 07. Make updates preserve working tools, overrides, and chosen versions
 
 - [ ] `install_scrcpy_release` currently overwrites both saved binary paths.
       Preserve explicit custom tools and native unlock preferences; make changes
@@ -265,6 +271,22 @@ This is a prerequisite for dependable native unlock and useful ADB error status.
 
 These are source-confirmed implementation behaviors, not claims of a reproduced
 failure in the installed app. Fold the fixes into item 02 where practical.
+
+- [ ] After a successful manual ADB or scrcpy version change, automatically
+      disable automatic updates so the selected version is retained. Persist
+      and clearly show that choice; re-enabling automatic updates must be
+      deliberate. Cancelled or failed changes leave the previous update setting
+      intact. Keep automatic checking distinct from automatic installation, and
+      retain the explicit manual check from item 15.
+- [ ] Before activating an older ADB or scrcpy version, show an explicit
+      **Downgrade ADB?** or **Downgrade scrcpy?** warning with the current and
+      requested versions. Explain potential compatibility/security regressions
+      and that automatic updates will be disabled after the change. Require
+      confirmation; cancellation leaves executables and preferences unchanged.
+      Compare actual release/build versions rather than ADB's protocol version.
+- [ ] Verify upgrades, downgrades, unchanged-version selections, warning
+      confirmation/cancellation, failed activation, saved update preferences
+      after restart, and manual checks while automatic updates are disabled.
 
 ### 08. Keep device state separate from daemon state
 
