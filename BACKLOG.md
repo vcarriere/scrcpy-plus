@@ -427,22 +427,27 @@ file deleted afterward stays explicitly custom/unavailable. Reset is per tool.
 
 ### 15. Automatic and manual update checks
 
-The owner requested the label/inversion change now and deferred the expanded
-ADB/scrcpy update checks. Only the existing SCRCPY+ check is currently covered.
+The owner requested the automatic-check label and manual button now, using only
+the existing SCRCPY+ check. Expanded ADB/scrcpy update checks remain deferred.
+
+The agreed labels are **Automatically check for updates** for the toggle and
+**Check for updates now** for the manual button.
 
 - [ ] Make the setting cover **both ADB and scrcpy updates**, in addition to the
       existing SCRCPY+ app update check. Use the official Google Platform-Tools
       source for ADB and official Genymobile releases for scrcpy, with separate
       installed/available versions and results for each component.
-- [ ] Rename the current toggle to **Automatically check for updates** so its
+- [x] Rename the current toggle to **Automatically check for updates** so its
       scope is clear. It controls background checks, not automatic installation.
       Preserve the current preference and update all translations. Avoid
       **Automatic updates**, which could imply that updates install themselves.
-- [ ] Add a **Check for updates now** button that works whether automatic checks
-      are on or off, without changing that saved preference. Check SCRCPY+, ADB,
-      and scrcpy when the expanded checker is implemented; show per-component
-      results and errors. Disable duplicate requests while a check is running.
-      A manual check must not silently install updates or replace executables.
+- [x] Add a **Check for updates now** button that works whether automatic checks
+      are on or off, without changing that saved preference. Use the existing
+      SCRCPY+ release source and show progress, available/current results, or an
+      error with retry. Share pending checks across pages and disable duplicate
+      requests. Manual checking does not install updates or replace executables.
+- [ ] Extend the manual button to ADB and scrcpy with the expanded checker;
+      show separate installed/available versions, results, and errors per component.
 - [x] Rename **Do not check for updates** to **Check for updates** and invert
       the checkbox/storage logic to match: checked enables checks, unchecked
       disables them. A fresh profile should have the setting checked by default.

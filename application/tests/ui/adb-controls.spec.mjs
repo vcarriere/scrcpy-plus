@@ -12,10 +12,12 @@ test("controls are optional and the status is readable without color", async ({ 
     await mock(page);
     await page.goto("/");
     await expect(page.getByRole("status")).toHaveText("Running");
+    await expect(page.getByRole("status").locator('[aria-hidden="true"]')).toHaveClass(/bg-primary/);
     await page.goto("/settings");
     await expect(page.getByRole("button", { name: "Stop ADB", exact: true })).toHaveCount(0);
     await page.getByRole("checkbox", { name: "Show advanced ADB controls" }).check();
     await expect(page.getByText("Server endpoint", { exact: true })).toBeVisible();
+    await expect(page.getByRole("status").locator('[aria-hidden="true"]')).toHaveClass(/bg-primary/);
     await expect(page.getByRole("button", { name: "Start ADB", exact: true })).toBeDisabled();
     await mkdir("../artifacts", { recursive: true });
     await page.screenshot({ path: "../artifacts/adb-controls-preview.png", fullPage: true });

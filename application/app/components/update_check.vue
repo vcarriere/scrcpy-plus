@@ -1,70 +1,47 @@
 <template>
-    <div class="card bg-base-200 w-full mb-8" v-if="updateAvailable">
-        <div class="card-body">
-            <p class="card-title">{{ $t('update_available') }}</p>
-            <div>{{ $t('new_version') }}</div>
-
-            <div class="flex text-white">
-                <span>{{ currentVersion }}</span>
-                <icon class="mx-4" size="25x25" name="arrow-right" />
-                <span>{{ latestVersion }}</span>
-            </div>
-
-            <button class="btn btn-primary text-white" @click="open">
-                <icon class="mr-2" size="20x20" name="download" />
-                <span>{{ $t('download') }}</span>
+    <div v-if="manual || updates.state === 'available'" :class="manual ? 'mt-4' : 'card bg-base-200 w-full mb-8'">
+        <div :class="manual ? 'flex flex-col items-start gap-2' : 'card-body'">
+            <button v-if="manual" class="btn btn-primary text-white h-auto min-h-12 py-3" :disabled="updates.state === 'checking'" @click="check_updates">
+                <span>{{ $t('check_updates_now') }}</span>
             </button>
+            <p v-if="manual && ['checking', 'current'].includes(updates.state)" role="status">{{ $t(updates.state === 'checking' ? 'updates_checking' : 'updates_current') }}</p>
+            <p v-if="manual && updates.state === 'error'" class="text-error break-words" role="alert">{{ $t('updates_check_failed') }}</p>
+
+            <template v-if="updates.state === 'available'">
+                <p class="card-title" :role="manual ? 'status' : null">{{ $t('update_available') }}</p>
+                <div>{{ $t('new_version') }}</div>
+
+                <div class="flex text-white">
+                    <span>{{ updates.currentVersion }}</span>
+                    <icon class="mx-4" size="25x25" name="arrow-right" />
+                    <span>{{ updates.latestVersion }}</span>
+                </div>
+
+                <button class="btn btn-primary text-white" @click="open">
+                    <icon class="mr-2" size="20x20" name="download" />
+                    <span>{{ $t('download') }}</span>
+                </button>
+            </template>
 
         </div>
     </div>
 </template>
 
 <script>
-import { invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 export default {
-    data() {
-        return {
-            updateAvailable: false,
-            currentVersion: new String(),
-            latestVersion: new String(),
-            repo: [],
-            release_url: ""
-        }
+    props: { manual: Boolean },
+    setup() {
+        return useAppUpdates();
     },
     methods: {
-        async get_latest_release(env) {
-            this.repo = await $fetch(env.releases_url);
-            return this.repo.find(release => release.prerelease === false && !release.draft);
-        },
-        // Compares dotted versions numerically, ignoring a leading "v" and any suffix
-        is_newer(latest, current) {
-            const parse = v => String(v).replace(/^v/i, "").split(/[.-]/).map(n => parseInt(n, 10) || 0);
-            const a = parse(latest), b = parse(current);
-            for (let i = 0; i < Math.max(a.length, b.length); i++) {
-                const x = a[i] ?? 0, y = b[i] ?? 0;
-                if (x !== y) return x > y;
-            }
-            return false;
-        },
         open() {
-            openUrl(this.release_url);
+            openUrl(this.updates.release_url);
         }
     },
-    async mounted() {
-        if (localStorage.getItem("setting.disable_update_check") == "true") return;
-        try {
-            const environment = await invoke("environment");
-            this.currentVersion = environment.app_version;
-            const release = await this.get_latest_release(environment);
-            if (!release) return;
-            this.latestVersion = release.tag_name;
-            this.release_url = release.html_url;
-            this.updateAvailable = this.is_newer(this.latestVersion, this.currentVersion);
-        } catch (e) {
-            // Offline or rate limited: skip the update check
-            console.warn("Update check failed", e);
-        }
+    mounted() {
+        if (this.manual || localStorage.getItem("setting.disable_update_check") == "true") return;
+        this.check_updates();
     }
 }
 </script>

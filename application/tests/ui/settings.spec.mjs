@@ -61,7 +61,7 @@ test("a deleted selected custom file remains custom and unavailable", async ({ p
     expect(await page.evaluate(() => localStorage.getItem("scrcpyplus.adb_path"))).toBe(deleted);
 });
 
-test("Check for updates defaults on, persists inverted choices, and only checks the existing app source", async ({ page }) => {
+test("automatic update checks default on, persist inverted choices, and only check the existing app source", async ({ page }) => {
     const requests = [];
     await page.route("https://api.github.com/repos/**/releases", async route => {
         requests.push(route.request().url());
@@ -69,16 +69,16 @@ test("Check for updates defaults on, persists inverted choices, and only checks 
     });
     await mock(page, { update_preference: null });
     await page.goto("/settings");
-    await expect(page.getByRole("checkbox", { name: "Check for updates", exact: true })).toBeChecked();
-    await page.getByRole("checkbox", { name: "Check for updates", exact: true }).uncheck();
+    await expect(page.getByRole("checkbox", { name: "Automatically check for updates", exact: true })).toBeChecked();
+    await page.getByRole("checkbox", { name: "Automatically check for updates", exact: true }).uncheck();
     expect(await page.evaluate(() => localStorage.getItem("setting.disable_update_check"))).toBe("true");
     await page.reload();
-    await expect(page.getByRole("checkbox", { name: "Check for updates", exact: true })).not.toBeChecked();
+    await expect(page.getByRole("checkbox", { name: "Automatically check for updates", exact: true })).not.toBeChecked();
     await page.locator('a[href="/"]').click();
     await expect(page.getByText("SCRCPY+", { exact: true })).toBeVisible();
     expect(requests).toEqual([]);
     await page.getByRole("link", { name: "Settings", exact: true }).click();
-    await page.getByRole("checkbox", { name: "Check for updates", exact: true }).check();
+    await page.getByRole("checkbox", { name: "Automatically check for updates", exact: true }).check();
     expect(await page.evaluate(() => localStorage.getItem("setting.disable_update_check"))).toBe("false");
     await page.locator('a[href="/"]').click();
     await expect.poll(() => requests.length).toBe(1);
@@ -89,7 +89,7 @@ for (const disabled of [true, false]) {
     test(`existing disabled-update value ${disabled} keeps its effective choice`, async ({ page }) => {
         await mock(page, { update_preference: disabled });
         await page.goto("/settings");
-        const checkbox = page.getByRole("checkbox", { name: "Check for updates", exact: true });
+        const checkbox = page.getByRole("checkbox", { name: "Automatically check for updates", exact: true });
         if (disabled) await expect(checkbox).not.toBeChecked();
         else await expect(checkbox).toBeChecked();
         expect(await page.evaluate(() => localStorage.getItem("setting.disable_update_check"))).toBe(String(disabled));
@@ -100,9 +100,11 @@ test("the affirmative update label and executable status are translated", async 
     await mock(page);
     await page.goto("/settings");
     await page.getByRole("combobox").selectOption("it");
-    await expect(page.getByRole("checkbox", { name: "Controlla gli aggiornamenti", exact: true })).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: "Controlla automaticamente gli aggiornamenti", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Controlla gli aggiornamenti ora", exact: true })).toBeVisible();
     await page.getByRole("combobox").selectOption("ja");
-    await expect(page.getByRole("checkbox", { name: "更新を確認する", exact: true })).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: "更新を自動的に確認する", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "今すぐ更新を確認する", exact: true })).toBeVisible();
     await expect(page.getByText("同梱の既定の実行ファイルを使用中", { exact: true })).toHaveCount(2);
     await expect(page.getByLabel("ADB 実行ファイル", { exact: true })).toBeVisible();
 });

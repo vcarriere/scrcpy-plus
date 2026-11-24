@@ -13,7 +13,7 @@ export default {
     },
     computed: {
         color() {
-            if (this.status.state === "running") return "bg-success";
+            if (this.status.state === "running") return "bg-primary";
             if (this.status.state === "error") return "bg-error";
             if (["starting", "stopping", "checking"].includes(this.status.state)) return "bg-warning";
             return "bg-base-content opacity-40";

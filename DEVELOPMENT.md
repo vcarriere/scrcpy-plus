@@ -90,7 +90,7 @@ cargo test --lib
   executable resolution, missing/deleted overrides, wrapper non-execution,
   shared manual/automatic protection signals, stable visible-window snapshots,
   captured-client deadlines, and cancellation of stalled optional metadata.
-- Forty headless Chromium tests exercise the actual built frontend with synthetic
+- Forty-nine headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
   offline/unauthorized states, an external restart automatically restoring device
@@ -104,7 +104,10 @@ cargo test --lib
   keyboard tabs, preserved unsaved config after an unresolved selection, visible
   disambiguators for equal long model names, matching device/body typography,
   narrow/high-scaling layouts, effective executable sources/reset/errors, and
-  the affirmative update checkbox with existing preferences and persistence,
+  the automatic update checkbox with existing preferences and persistence,
+  independent manual checks, shared in-flight requests across navigation,
+  stable-release filtering, current/available/error results and retry,
+  translated update controls and themed ADB indicators,
   stable advanced-toggle position/focus, collapsed-document scroll limits,
   spaced/wrapping screen-action buttons, explicit progress/timestamped results,
   and independent fresh checks while an older device response remains pending.
@@ -139,7 +142,10 @@ excluded from Git.
 
 ## Toolchain and dependencies
 
-Verified development tools: Node 26.13.1 LTS and Rust 1.100.0. Updated the in-scope
+Verified development tools: Node 26.13.1 LTS and Rust 1.100.0. Nuxt is now 4.7.0,
+checked against its [official stable release](https://github.com/nuxt/nuxt/releases/tag/v4.7.0)
+and npm release metadata; Vue 3.5.46 and the Tauri API 2.12.5 remain current.
+The default Nitro 2 build remains in use. Updated the in-scope
 Nuxt, Vue, router, Tauri, and Tauri plugins to their checked stable versions and
 refreshed both lockfiles. The declared minimum Rust version is now 1.90 to match
 the updated Tauri dependencies; development uses the pinned 1.100.0 toolchain.
@@ -148,9 +154,9 @@ Vite/i18n peer-dependency conflict without forcing incompatible peer resolutions
 Keep DaisyUI 4 and Tailwind 3 for the existing theme/configuration API; moving to
 DaisyUI 5/Tailwind 4 is a separate UI migration.
 
-The frontend generation succeeds with upstream tool warnings about the optional
-Tailwind nesting plugin and a Nuxt/Nitro cache-driver import. npm still reports
-eight moderate dependency advisories after compatible updates; these have not
+The frontend generation succeeds with an upstream Nuxt/Nitro cache-driver import
+warning. npm reports nine moderate dependency advisory entries after compatible
+updates; these have not
 been assessed or claimed fixed in this implementation.
 
 On this machine the installed C++ Build Tools were present but the Windows SDK
@@ -175,14 +181,23 @@ Unix PATH candidates without execute permission bits are skipped. This path has
 an additional Unix-only fixture; the current test run was Windows, so that
 platform-specific fixture was not executed here.
 
-The affirmative **Check for updates** checkbox maps checked to the existing
+The **Automatically check for updates** checkbox maps checked to the existing
 `setting.disable_update_check=false` value and unchecked to true. Keeping that
 key preserves preferences and compatibility with older previews. A missing key
 still enables checks and now appears checked. English, Italian, and Japanese
-labels are updated. The scope is the existing SCRCPY+ app release check; new ADB
-and scrcpy checks, installation, and updater behavior remain deferred under item
-15. Disabled checks make no app-release request, and manual download pages are
-unchanged. No automatic installation was introduced.
+labels are updated. **Check for updates now** runs the same SCRCPY+ app release
+check whether automatic checks are on or off, without changing the preference.
+It shows progress, a newer stable release, up-to-date status, or a retryable error.
+Manual and automatic checks share their pending request and result across pages;
+requests have a ten-second timeout and no automatic HTTP retries. An empty or
+unusable stable-release feed reports failure rather than claiming to be current.
+New ADB and scrcpy checks, installation, and updater behavior remain deferred
+under item 15. Disabled automatic checks make no background app-release request;
+explicit manual checks remain available. No automatic installation was introduced.
+
+The shared ADB status marker uses the existing theme's primary purple in both
+the main-page version information and Advanced ADB controls. Running/Stopped text
+remains readable independently of color; warning/error states retain their meaning.
 
 The Advanced ADB card opens directly below the settings-toggle card. Inserting
 the old panel above it moved the toggle by 580 pixels in the pointer case and

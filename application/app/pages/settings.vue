@@ -27,10 +27,13 @@
                     <span>{{ $t('translation_credits_value') }}</span>
                 </p>
 
-                <label class="mt-8 flex cursor-pointer" v-for="item, i in settings">
-                    <input type="checkbox" class="toggle checkbox-primary mr-2" @change="updateSetting(item.key, $event)" :checked="item.checked" />
-                    <p>{{ $t(item.title) }}</p>
-                </label>
+                <div v-for="item in settings" :key="item.key">
+                    <label class="mt-8 flex cursor-pointer">
+                        <input type="checkbox" class="toggle checkbox-primary mr-2" @change="updateSetting(item.key, $event)" :checked="item.checked" />
+                        <p>{{ $t(item.title) }}</p>
+                    </label>
+                    <update_check v-if="item.key === 'setting.disable_update_check'" manual />
+                </div>
             </div>
         </div>
 

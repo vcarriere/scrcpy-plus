@@ -109,9 +109,12 @@ and password helper are not replaced or imported.
     use a bundled/system default or a custom executable. Missing saved overrides
     explain their fallback; missing selected tools show Unavailable. Reset clears
     only that tool's override. Reading status does not execute either tool.
-13. "Check for updates" is affirmative: checked enables the existing SCRCPY+
-    app check, unchecked disables it. Previous choices are preserved. Expanded
-    ADB/scrcpy update checks remain on the backlog.
+13. "Automatically check for updates" controls the existing SCRCPY+ app check.
+    "Check for updates now" works whether that setting is on or off and leaves
+    it unchanged. It shows progress, current/newer-version results, or an error
+    you can retry. Neither check installs updates. Expanded ADB/scrcpy update
+    checks remain on the backlog. Running ADB markers use the app's purple theme
+    in both the main-page version information and Advanced ADB controls.
 14. While partway down Settings, toggle "Show advanced ADB controls" on/off
     using the pointer or Space key. The ADB card opens below the toggle card
     without moving the toggle or focus. Closing it keeps the visible position
