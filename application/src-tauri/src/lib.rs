@@ -22,8 +22,31 @@ fn environment() -> Value {
 }
 
 #[tauri::command]
-fn set_binary_paths(scrcpy_path: Option<String>, adb_path: Option<String>) {
+fn set_binary_paths(scrcpy_path: Option<String>, adb_path: Option<String>) -> Result<(), String> {
+  let current = system_command::get_binary_paths();
+  if current["scrcpy_path"]["requested"].as_str() == scrcpy_path.as_deref().filter(|path| !path.is_empty())
+    && current["adb_path"]["requested"].as_str() == adb_path.as_deref().filter(|path| !path.is_empty()) { return Ok(()); }
+  let _configuration = adb_server::configure()?;
   system_command::set_custom_paths(scrcpy_path, adb_path);
+  Ok(())
+}
+
+fn check_selected_installation(destination: &std::path::Path, selected: &[String]) -> Result<(), String> {
+  let destination = match destination.canonicalize() {
+    Ok(path) => path,
+    Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+    Err(error) => return Err(error.to_string()),
+  };
+  for selected in selected {
+    if let Ok(path) = std::path::Path::new(selected).canonicalize() {
+      #[cfg(windows)]
+      let inside = path.to_string_lossy().to_lowercase().starts_with(&(destination.to_string_lossy().to_lowercase() + "\\"));
+      #[cfg(not(windows))]
+      let inside = path.starts_with(&destination);
+      if inside { return Err("This version contains a selected executable. Choose another version or change the executable selection before reinstalling it.".into()); }
+    }
+  }
+  Ok(())
 }
 
 #[tauri::command]
@@ -36,22 +59,20 @@ async fn get_binary_paths() -> Result<Value, String> {
 #[tauri::command]
 async fn download_scrcpy(app: tauri::AppHandle, url: String, version: String) -> Result<Value, String> {
   let base = app.path().app_data_dir().map_err(|e| e.to_string())?;
-  tauri::async_runtime::spawn_blocking(move || downloader::download_and_extract(&base, &url, &version))
+  tauri::async_runtime::spawn_blocking(move || {
+    let _installation = adb_server::install()?;
+    let selected = system_command::get_binary_paths();
+    let paths = ["scrcpy_path", "adb_path"].iter().filter_map(|key| selected[key]["path"].as_str().map(str::to_string)).collect::<Vec<_>>();
+    check_selected_installation(&base.join("scrcpy").join(&version), &paths)?;
+    downloader::download_and_extract(&base, &url, &version)
+  })
     .await
     .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 async fn get_dependency_versions() -> Result<Value, String> {
-  tauri::async_runtime::spawn_blocking(|| {
-    let scrcpy_version: String = scrcpy(vec!["--version"]).unwrap_or_default().split_whitespace().nth(1).unwrap_or("Unable to find SCRCPY").to_string();
-    let adb_version:    String = adb(vec!["--version"]).unwrap_or_default().split_whitespace().nth(6).unwrap_or("Unable to find ADB").to_string();
-    return json!({
-      "scrcpy_plus":  env!("CARGO_PKG_VERSION"),
-      "scrcpy":       scrcpy_version,
-      "adb":          adb_version
-    });
-  }).await.map_err(|e| e.to_string())
+  tauri::async_runtime::spawn_blocking(system_command::dependency_versions).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -147,6 +168,40 @@ async fn control_adb(start: bool) -> Result<Value, String> {
     drop(change);
     Ok(adb_status())
   }).await.map_err(|e| e.to_string())?
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn frontend_reload_can_reapply_unchanged_paths_during_installation() {
+    let current = system_command::get_binary_paths();
+    let scrcpy = current["scrcpy_path"]["requested"].as_str().map(str::to_string);
+    let adb = current["adb_path"]["requested"].as_str().map(str::to_string);
+    let _installation = adb_server::install().unwrap();
+    assert!(set_binary_paths(scrcpy, adb).is_ok());
+    assert!(set_binary_paths(Some("different selected executable".into()), None).is_err());
+  }
+
+  #[test]
+  fn reinstall_cannot_remove_a_selected_custom_launcher() {
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let root = std::env::temp_dir().join(format!("scrcpy-plus-selected-install-{}-{}", std::process::id(), nonce));
+    let destination = root.join("v5.0.1");
+    std::fs::create_dir_all(&destination).unwrap();
+    let wrapper = destination.join("password launcher.cmd");
+    let unrelated = root.join("other-tool");
+    std::fs::write(&wrapper, b"keep custom launcher").unwrap();
+    std::fs::write(&unrelated, b"another executable").unwrap();
+    assert!(check_selected_installation(&destination, &[wrapper.to_string_lossy().to_string()]).is_err());
+    assert!(check_selected_installation(&destination, &[unrelated.to_string_lossy().to_string()]).is_ok());
+    assert_eq!(std::fs::read(&wrapper).unwrap(), b"keep custom launcher");
+    std::fs::remove_file(wrapper).unwrap();
+    std::fs::remove_file(unrelated).unwrap();
+    std::fs::remove_dir(destination).unwrap();
+    std::fs::remove_dir(root).unwrap();
+  }
 }
 
 // #[cfg_attr(mobile, tauri::mobile_entry_point)]

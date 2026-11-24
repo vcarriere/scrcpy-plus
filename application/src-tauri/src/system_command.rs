@@ -38,14 +38,25 @@ pub fn set_custom_paths(scrcpy_path: Option<String>, adb_path: Option<String>) {
     *BINARY_PATHS.lock().unwrap() = paths;
 }
 
+fn bundled_binary(executable: &Path, name: &str) -> std::path::PathBuf {
+    executable.parent().unwrap_or_else(|| Path::new(".")).join("scrcpy").join(format!("{}.exe", name))
+}
+
+fn default_binary(name: &str) -> String {
+    if cfg!(windows) {
+        return std::env::current_exe().map(|executable| bundled_binary(&executable, name))
+            .unwrap_or_else(|_| Path::new("scrcpy").join(format!("{}.exe", name)))
+            .to_string_lossy().to_string();
+    }
+    name.to_string()
+}
+
 pub fn adb_path() -> String {
-    let default = if cfg!(windows) { "scrcpy/adb.exe" } else { "adb" };
-    BINARY_PATHS.lock().unwrap().adb.effective.clone().unwrap_or(default.to_string())
+    BINARY_PATHS.lock().unwrap().adb.effective.clone().unwrap_or_else(|| default_binary("adb"))
 }
 
 pub fn scrcpy_path() -> String {
-    let default = if cfg!(windows) { "scrcpy/scrcpy.exe" } else { "scrcpy" };
-    BINARY_PATHS.lock().unwrap().scrcpy.effective.clone().unwrap_or(default.to_string())
+    BINARY_PATHS.lock().unwrap().scrcpy.effective.clone().unwrap_or_else(|| default_binary("scrcpy"))
 }
 
 fn system_path_candidate(path: &Path) -> bool {
@@ -82,8 +93,8 @@ fn binary_details(selected: &BinaryPath, default: &str, source: &str, search_pat
 fn describe_binary_paths(paths: &BinaryPaths, search_path: Option<&OsStr>) -> serde_json::Value {
     let source = if cfg!(windows) { "bundled" } else { "system" };
     serde_json::json!({
-        "scrcpy_path": binary_details(&paths.scrcpy, if cfg!(windows) { "scrcpy/scrcpy.exe" } else { "scrcpy" }, source, search_path),
-        "adb_path": binary_details(&paths.adb, if cfg!(windows) { "scrcpy/adb.exe" } else { "adb" }, source, search_path),
+        "scrcpy_path": binary_details(&paths.scrcpy, &default_binary("scrcpy"), source, search_path),
+        "adb_path": binary_details(&paths.adb, &default_binary("adb"), source, search_path),
     })
 }
 
@@ -105,9 +116,60 @@ fn parse_adb_version(output: &str) -> Result<serde_json::Value, String> {
     Ok(serde_json::json!({ "version": version, "protocol_version": protocol.trim(), "path": path }))
 }
 
+fn parse_scrcpy_version(output: &str) -> Option<String> {
+    output.lines().find_map(|line| line.trim_start().strip_prefix("scrcpy "))
+        .and_then(|version| version.split_whitespace().next())
+        .filter(|version| version.trim_start_matches('v').starts_with(|c: char| c.is_ascii_digit()))
+        .map(str::to_string)
+}
+
+fn native_version_command(command: &str) -> bool {
+    let requested = Path::new(command);
+    if requested.extension().and_then(OsStr::to_str).is_some_and(|ext| ["cmd", "bat", "ps1", "sh", "bash", "zsh", "py"].iter().any(|name| ext.eq_ignore_ascii_case(name))) {
+        return false;
+    }
+    let path = if requested.components().count() > 1 {
+        requested.to_path_buf()
+    } else {
+        let Some(path) = std::env::var_os("PATH").and_then(|paths| std::env::split_paths(&paths)
+            .map(|directory| directory.join(command)).find(|candidate| system_path_candidate(candidate))) else { return false; };
+        path
+    };
+    let mut signature = [0; 4];
+    let Ok(mut file) = std::fs::File::open(path) else { return false; };
+    if file.read_exact(&mut signature).is_err() { return false; }
+    signature.starts_with(b"MZ") || signature == *b"\x7fELF" || [
+        [0xfe, 0xed, 0xfa, 0xce], [0xce, 0xfa, 0xed, 0xfe],
+        [0xfe, 0xed, 0xfa, 0xcf], [0xcf, 0xfa, 0xed, 0xfe],
+        [0xca, 0xfe, 0xba, 0xbe], [0xbe, 0xba, 0xfe, 0xca],
+        [0xca, 0xfe, 0xba, 0xbf], [0xbf, 0xba, 0xfe, 0xca],
+    ].contains(&signature)
+}
+
+fn version_output(command: &str) -> Result<String, String> {
+    if !native_version_command(command) {
+        return Err("Version information is unavailable for this executable or script launcher.".into());
+    }
+    execute(command, vec!["--version"], false)
+}
+
+fn dependency_versions_for(paths: &BinaryPaths) -> serde_json::Value {
+    let scrcpy = paths.scrcpy.effective.clone().unwrap_or_else(|| default_binary("scrcpy"));
+    let adb = paths.adb.effective.clone().unwrap_or_else(|| default_binary("adb"));
+    let scrcpy_version = version_output(&scrcpy).ok().and_then(|output| parse_scrcpy_version(&output));
+    let adb_version = version_output(&adb).ok().and_then(|output| parse_adb_version(&output).ok())
+        .and_then(|details| details["version"].as_str().map(str::to_string));
+    serde_json::json!({ "scrcpy_plus": env!("CARGO_PKG_VERSION"), "scrcpy": scrcpy_version, "adb": adb_version })
+}
+
+pub fn dependency_versions() -> serde_json::Value {
+    let paths = BINARY_PATHS.lock().unwrap().clone();
+    dependency_versions_for(&paths)
+}
+
 pub fn adb_client() -> serde_json::Value {
     let command = adb_path();
-    let result = execute(&command, vec!["--version"], false).and_then(|output| parse_adb_version(&output));
+    let result = version_output(&command).and_then(|output| parse_adb_version(&output));
     let fallback = if Path::new(&command).components().count() > 1 {
         std::path::absolute(&command).ok().map(|path| path.to_string_lossy().to_string()).unwrap_or(command.clone())
     } else { command.clone() };
@@ -128,9 +190,7 @@ fn execute_output(command: &str, args: Vec<&str>, session: bool) -> Result<(std:
     #[cfg(windows)]
     cmd.creation_flags(0x08000000);
     // scrcpy locates adb through this variable, so keep it consistent with the chosen adb
-    if let Some(adb_path) = BINARY_PATHS.lock().unwrap().adb.effective.clone() {
-        cmd.env("ADB", adb_path);
-    }
+    cmd.env("ADB", adb_path());
 
     cmd.stdin(Stdio::null()).stderr(Stdio::null());
     cmd.stdout(if session { Stdio::null() } else { Stdio::piped() });
@@ -178,7 +238,8 @@ fn execute(command: &str, args: Vec<&str>, session: bool) -> Result<String, Stri
 }
 
 pub fn scrcpy(args: Vec<&str>) -> Result<String, String> {
-    let _operation = if args == ["--version"] { None } else { Some(adb_server::begin(false)?) };
+    if args == ["--version"] { return version_output(&scrcpy_path()); }
+    let _operation = adb_server::begin(false)?;
     let command = scrcpy_path();
     return execute(&command, args, false);
 }
@@ -191,7 +252,7 @@ pub fn run_scrcpy(args: Vec<&str>, automatic_screen: bool) -> Result<String, Str
 }
 
 pub fn adb(args: Vec<&str>) -> Result<String, String> {
-    if args == ["--version"] { return execute(&adb_path(), args, false); }
+    if args == ["--version"] { return version_output(&adb_path()); }
     if args.iter().any(|arg| ["start-server", "kill-server", "server"].contains(arg)) {
         return Err("Use the ADB Start/Stop controls to manage the server.".into());
     }
@@ -260,8 +321,8 @@ mod tests {
     fn default_binary_status_uses_the_same_commands_as_runtime_defaults() {
         let paths = BinaryPaths { scrcpy: BinaryPath::empty(), adb: BinaryPath::select(Some(String::new())) };
         let status = describe_binary_paths(&paths, None);
-        assert_eq!(status["scrcpy_path"]["command"], if cfg!(windows) { "scrcpy/scrcpy.exe" } else { "scrcpy" });
-        assert_eq!(status["adb_path"]["command"], if cfg!(windows) { "scrcpy/adb.exe" } else { "adb" });
+        assert_eq!(status["scrcpy_path"]["command"], default_binary("scrcpy"));
+        assert_eq!(status["adb_path"]["command"], default_binary("adb"));
         for key in ["scrcpy_path", "adb_path"] {
             assert_eq!(status[key]["source"], if cfg!(windows) { "bundled" } else { "system" });
             assert!(status[key]["requested"].is_null());
@@ -350,6 +411,44 @@ mod tests {
         assert_eq!(status["path"], wrapper.to_string_lossy().as_ref());
         assert_eq!(status["available"], true);
         assert!(!directory.path.join("executed.txt").exists());
+    }
+
+    #[test]
+    fn bundled_paths_are_adjacent_to_the_gui_not_the_working_directory() {
+        let directory = TestDirectory::new();
+        let executable = directory.path.join("gui.exe");
+        assert_eq!(bundled_binary(&executable, "adb"), directory.path.join("scrcpy").join("adb.exe"));
+        assert_eq!(bundled_binary(&executable, "scrcpy"), directory.path.join("scrcpy").join("scrcpy.exe"));
+        assert!(bundled_binary(&executable, "adb").is_absolute());
+        #[cfg(windows)]
+        assert_eq!(default_binary("adb"), bundled_binary(&std::env::current_exe().unwrap(), "adb").to_string_lossy());
+        #[cfg(unix)]
+        assert_eq!(default_binary("adb"), "adb");
+    }
+
+    #[test]
+    fn dependency_metadata_does_not_execute_script_launchers() {
+        let directory = TestDirectory::new();
+        for name in ["password wrapper.CMD", "password wrapper.bat", "password wrapper.ps1", "password wrapper.launcher"] {
+            let wrapper = directory.path.join(name);
+            std::fs::write(&wrapper, "#!/bin/sh\n@echo off\r\n>\"%~dp0executed.txt\" echo executed\r\n").unwrap();
+            let command = wrapper.to_string_lossy().to_string();
+            let paths = BinaryPaths { scrcpy: BinaryPath::select(Some(command.clone())), adb: BinaryPath::select(Some(command.clone())) };
+            assert!(version_output(&command).is_err());
+            let versions = dependency_versions_for(&paths);
+            assert_eq!(versions["scrcpy_plus"], env!("CARGO_PKG_VERSION"));
+            assert!(versions["scrcpy"].is_null());
+            assert!(versions["adb"].is_null());
+            assert!(!directory.path.join("executed.txt").exists());
+        }
+    }
+
+    #[test]
+    fn scrcpy_version_is_found_by_its_label_not_token_position() {
+        assert_eq!(parse_scrcpy_version("diagnostic banner\nscrcpy 5.0.1 <https://github.com/Genymobile/scrcpy>\n"), Some("5.0.1".into()));
+        assert_eq!(parse_scrcpy_version("  scrcpy v5.0.1-preview\n"), Some("v5.0.1-preview".into()));
+        assert_eq!(parse_scrcpy_version("scrcpy could not start\n"), None);
+        assert_eq!(parse_scrcpy_version("something unrelated\n"), None);
     }
 
     #[test]

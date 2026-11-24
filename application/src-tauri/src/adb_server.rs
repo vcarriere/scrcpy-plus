@@ -14,15 +14,17 @@ pub struct Runtime {
     pub changing: Option<bool>,
     pub commands: usize,
     pub sessions: usize,
+    installing: bool,
     revision: u64,
 }
 
 impl Runtime {
     pub const fn new() -> Self {
-        Self { paused: false, changing: None, commands: 0, sessions: 0, revision: 0 }
+        Self { paused: false, changing: None, commands: 0, sessions: 0, installing: false, revision: 0 }
     }
 
     fn begin(&mut self, session: bool) -> Result<(), String> {
+        if self.installing { return Err("A tool installation is in progress. Wait for it to finish first.".into()); }
         if self.paused || self.changing.is_some() {
             return Err("ADB is paused. Start ADB before using a device.".into());
         }
@@ -31,7 +33,7 @@ impl Runtime {
     }
 
     fn change(&mut self, start: bool) -> Result<(), String> {
-        if self.changing.is_some() || self.commands > 0 || self.sessions > 0 {
+        if self.installing || self.changing.is_some() || self.commands > 0 || self.sessions > 0 {
             return Err("Close SCRCPY sessions and wait for current ADB operations to finish first.".into());
         }
         self.paused = true;
@@ -47,10 +49,41 @@ impl Runtime {
     }
 
     fn observe(&mut self, running: bool, revision: u64) {
-        if running && self.changing.is_none() && self.revision == revision {
+        if running && !self.installing && self.changing.is_none() && self.revision == revision {
             self.paused = false;
         }
     }
+
+    fn install(&mut self) -> Result<(), String> {
+        if self.installing || self.changing.is_some() || self.commands > 0 || self.sessions > 0 {
+            return Err("Close SCRCPY sessions and wait for current ADB operations to finish before installing tools.".into());
+        }
+        self.installing = true;
+        self.revision = self.revision.wrapping_add(1);
+        Ok(())
+    }
+
+    fn configure(&mut self) -> Result<(), String> {
+        if self.installing || self.changing.is_some() { return Err("Wait for the current tool operation to finish before changing executables.".into()); }
+        self.commands += 1;
+        Ok(())
+    }
+
+    fn finish_install(&mut self) {
+        self.installing = false;
+        self.revision = self.revision.wrapping_add(1);
+    }
+}
+
+pub struct Installation;
+
+impl Drop for Installation {
+    fn drop(&mut self) { RUNTIME.lock().unwrap().finish_install(); }
+}
+
+pub fn install() -> Result<Installation, String> {
+    RUNTIME.lock().unwrap().install()?;
+    Ok(Installation)
 }
 
 pub struct Operation { session: bool }
@@ -65,6 +98,11 @@ impl Drop for Operation {
 pub fn begin(session: bool) -> Result<Operation, String> {
     RUNTIME.lock().unwrap().begin(session)?;
     Ok(Operation { session })
+}
+
+pub fn configure() -> Result<Operation, String> {
+    RUNTIME.lock().unwrap().configure()?;
+    Ok(Operation { session: false })
 }
 
 pub struct Change { started: bool }
@@ -299,6 +337,32 @@ mod tests {
         let (address, handle) = server(b"OKAY00040029");
         assert_eq!(version(&address).unwrap(), Some(41));
         handle.join().unwrap();
+    }
+
+    #[test]
+    fn installation_is_exclusive_and_preserves_intentional_stop() {
+        let mut runtime = Runtime::new();
+        runtime.begin(true).unwrap();
+        assert!(runtime.install().is_err());
+        runtime.sessions = 0;
+        runtime.begin(false).unwrap();
+        assert!(runtime.install().is_err());
+        runtime.commands = 0;
+        runtime.paused = true;
+        runtime.install().unwrap();
+        assert!(runtime.install().is_err());
+        assert!(runtime.begin(true).is_err());
+        assert!(runtime.begin(false).is_err());
+        assert!(runtime.configure().is_err());
+        assert!(runtime.change(true).is_err());
+        runtime.observe(true, runtime.revision);
+        assert!(runtime.paused);
+        runtime.finish_install();
+        assert!(runtime.paused);
+        runtime.paused = false;
+        runtime.install().unwrap();
+        runtime.finish_install();
+        assert!(runtime.begin(true).is_ok());
     }
 
     #[test]
