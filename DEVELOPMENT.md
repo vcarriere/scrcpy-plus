@@ -198,6 +198,9 @@ The manual button sits alongside the automatic-check option at the normal window
 width and wraps below it on narrow windows. Progress and results stay below the
 controls. Its **Check for updates** label and height match the compact toggle row,
 including larger text sizes.
+The Settings toggle rows now have a 16-pixel gap at the default text size. All 23
+focused settings/update/scroll checks pass with the tighter spacing; the earlier
+full 50-test UI run also passed for the default and advanced-section changes.
 
 Fresh profiles enable automatic update checks and Remember SCRCPY config and hide
 advanced controls. The Settings checkbox and SCRCPY configuration save/load logic

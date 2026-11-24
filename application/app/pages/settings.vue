@@ -34,7 +34,7 @@
                             <p>{{ $t(item.title) }}</p>
                         </label>
                     </update_check>
-                    <label v-else class="mt-8 flex cursor-pointer">
+                    <label v-else class="mt-2 flex cursor-pointer">
                         <input type="checkbox" class="toggle checkbox-primary mr-2" @change="updateSetting(item.key, $event)" :checked="item.checked" />
                         <p>{{ $t(item.title) }}</p>
                     </label>
