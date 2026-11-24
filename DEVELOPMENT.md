@@ -1,7 +1,7 @@
 # Development checkpoint — November 23, 2026
 
 The first implementation adds ADB server status, a small status dot with text,
-and Start/Stop controls revealed by **Show advanced ADB controls** in Settings.
+and Start/Stop controls revealed by **Show advanced controls** in Settings.
 It preserves normal startup: device discovery can start ADB when the main page
 opens. After an explicit Stop, the native backend blocks device commands and
 new mirroring sessions while ADB remains stopped. Status polling does not start
@@ -209,7 +209,15 @@ Italian, and Japanese previews were visually reviewed at normal/narrow widths an
 larger text. All 18 portable artifact hashes and the Windows x64 GUI format passed.
 The test browser/server closed; this build was not launched on the owner's desktop.
 
-The Advanced ADB card opens directly below the settings-toggle card. Inserting
+**Show advanced controls** reveals ADB management, SCRCPY/ADB executable paths,
+and Manage versions together, directly below the settings-toggle card. Language,
+automatic/manual update checks, and Remember SCRCPY config stay in the main card.
+New settings designated as advanced belong in this shared section, following
+`.cursor/rules/advanced-settings.mdc`. The legacy `setting.advanced_adb` key is
+retained so existing visibility choices survive. Hiding this section preserves
+the selected executables; the binary-path startup plugin still applies overrides.
+
+The advanced section opens directly below the settings-toggle card. Inserting
 the old panel above it moved the toggle by 580 pixels in the pointer case and
 more in narrow/larger-text cases. The new order preserves its viewport position
 and focus through pointer and Space-key enable/disable, including 125% text and

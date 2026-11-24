@@ -464,9 +464,9 @@ The agreed labels are **Automatically check for updates** for the toggle and
       background release requests for SCRCPY+, ADB, and scrcpy, while explicit
       manual checks remain available and work normally.
 
-### 16. Keep the viewport steady when toggling Advanced ADB controls
+### 16. Keep the viewport steady when toggling advanced controls
 
-- [x] Reproduce the screen movement when **Show advanced ADB controls** inserts
+- [x] Reproduce the screen movement when **Show advanced controls** inserts
       the ADB panel above the current position. Keep the toggle and current reading
       position at the same viewport location when content is added or removed.
 - [x] Consider placing the revealed panel below its toggle or preserving a stable
@@ -483,6 +483,8 @@ The panel now appears immediately after the settings-toggle card. The original
 pointer case moved the toggle by 580 pixels; pointer, narrow-keyboard, and
 larger-text checks now preserve its position exactly. Focus remains on the
 toggle. A separate collapse check covers the shorter document's scroll limit.
+The shared advanced section now also contains executable locations and version
+management, with the same stable-position behavior and saved visibility choice.
 
 ## Delivery order and verification
 

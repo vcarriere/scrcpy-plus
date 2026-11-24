@@ -4,7 +4,7 @@ import { mock } from "./fixtures.mjs";
 
 async function advanced(page) {
     await page.goto("/settings");
-    await page.getByRole("checkbox", { name: "Show advanced ADB controls" }).check();
+    await page.getByRole("checkbox", { name: "Show advanced controls" }).check();
     await expect(page.getByRole("button", { name: "Stop ADB", exact: true })).toBeVisible();
 }
 
@@ -15,7 +15,7 @@ test("controls are optional and the status is readable without color", async ({ 
     await expect(page.getByRole("status").locator('[aria-hidden="true"]')).toHaveClass(/bg-primary/);
     await page.goto("/settings");
     await expect(page.getByRole("button", { name: "Stop ADB", exact: true })).toHaveCount(0);
-    await page.getByRole("checkbox", { name: "Show advanced ADB controls" }).check();
+    await page.getByRole("checkbox", { name: "Show advanced controls" }).check();
     await expect(page.getByText("Server endpoint", { exact: true })).toBeVisible();
     await expect(page.getByRole("status").locator('[aria-hidden="true"]')).toHaveClass(/bg-primary/);
     await expect(page.getByRole("button", { name: "Start ADB", exact: true })).toBeDisabled();

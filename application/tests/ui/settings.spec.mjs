@@ -5,22 +5,49 @@ import { mock } from "./fixtures.mjs";
 test("executable defaults show their actual paths and do not launch tools", async ({ page }) => {
     await mock(page, { update_preference: null });
     await page.goto("/settings");
+    const advanced = page.getByRole("checkbox", { name: "Show advanced controls", exact: true });
+    await expect(advanced).not.toBeChecked();
+    await expect(page.getByLabel("SCRCPY executable", { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel("ADB executable", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Manage versions", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Start ADB", exact: true })).toHaveCount(0);
+    await expect(page.getByRole("checkbox", { name: "Remember SCRCPY config", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Check for updates now", exact: true })).toBeVisible();
+    await mkdir("../artifacts", { recursive: true });
+    await page.screenshot({ path: "../artifacts/settings-basic-preview.png", fullPage: true, animations: "disabled" });
+    await advanced.check();
     await expect(page.getByLabel("SCRCPY executable", { exact: true })).toHaveValue("C:\\SCRCPY+\\scrcpy\\scrcpy.exe");
     await expect(page.getByLabel("ADB executable", { exact: true })).toHaveValue("C:\\SCRCPY+\\scrcpy\\adb.exe");
     await expect(page.getByText("Using bundled default", { exact: true })).toHaveCount(2);
     await expect(page.getByRole("button", { name: "Reset", exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => adb_test.calls.some(call => ["exec_adb", "exec_scrcpy", "run_scrcpy", "get_dependency_versions"].includes(call.command)))).toBe(false);
     await mkdir("../artifacts", { recursive: true });
-    await page.screenshot({ path: "../artifacts/settings-defaults-preview.png", fullPage: true });
+    await page.screenshot({ path: "../artifacts/settings-defaults-preview.png", fullPage: true, animations: "disabled" });
+    await advanced.uncheck();
+    await page.reload();
+    await expect(advanced).not.toBeChecked();
+    await expect(page.getByLabel("ADB executable", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem("setting.advanced_adb"))).toBe("false");
 });
 
 test("custom executables and password wrappers can reset independently without losing the other choice", async ({ page }) => {
     const wrapper = "C:\\Phone Tools\\scrcpy-password.cmd";
     const adb = "C:\\Android Tools\\adb.exe";
-    await mock(page, { saved_paths: { scrcpy_path: wrapper, adb_path: adb } });
+    await mock(page, { advanced_adb: true, saved_paths: { scrcpy_path: wrapper, adb_path: adb } });
     await page.goto("/settings");
     await expect(page.getByText("Using custom executable", { exact: true })).toHaveCount(2);
     await expect(page.getByLabel("SCRCPY executable", { exact: true })).toHaveValue(wrapper);
+    const advanced = page.getByRole("checkbox", { name: "Show advanced controls", exact: true });
+    await expect(advanced).toBeChecked();
+    await advanced.uncheck();
+    await expect(page.getByLabel("SCRCPY executable", { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem("scrcpyplus.scrcpy_path"))).toBe(wrapper);
+    expect(await page.evaluate(() => localStorage.getItem("scrcpyplus.adb_path"))).toBe(adb);
+    await page.reload();
+    await expect.poll(() => page.evaluate(() => adb_test.binary_requests)).toEqual({ scrcpy_path: wrapper, adb_path: adb });
+    await advanced.check();
+    await expect(page.getByLabel("SCRCPY executable", { exact: true })).toHaveValue(wrapper);
+    await expect(page.getByLabel("ADB executable", { exact: true })).toHaveValue(adb);
     await page.locator(".mb-4").filter({ has: page.locator("#scrcpy_path") }).getByRole("button", { name: "Reset", exact: true }).click();
     await expect(page.getByText("Using bundled default", { exact: true })).toHaveCount(1);
     await expect(page.getByLabel("ADB executable", { exact: true })).toHaveValue(adb);
@@ -33,7 +60,7 @@ test("custom executables and password wrappers can reset independently without l
 
 test("a missing saved custom executable explains the actual fallback", async ({ page }) => {
     const missing = "C:\\Missing Tools\\scrcpy.exe";
-    await mock(page, { saved_paths: { scrcpy_path: missing }, invalid_paths: [missing] });
+    await mock(page, { advanced_adb: true, saved_paths: { scrcpy_path: missing }, invalid_paths: [missing] });
     await page.goto("/settings");
     await expect(page.getByRole("alert")).toContainText(missing);
     await expect(page.getByLabel("SCRCPY executable", { exact: true })).toHaveValue("C:\\SCRCPY+\\scrcpy\\scrcpy.exe");
@@ -43,7 +70,7 @@ test("a missing saved custom executable explains the actual fallback", async ({ 
 });
 
 test("a missing default is unavailable and narrow executable controls fit", async ({ page }) => {
-    await mock(page, { missing_defaults: ["adb_path"] });
+    await mock(page, { advanced_adb: true, missing_defaults: ["adb_path"] });
     await page.setViewportSize({ width: 380, height: 800 });
     await page.goto("/settings");
     await expect(page.getByText("Default executable unavailable", { exact: true })).toBeVisible();
@@ -53,7 +80,7 @@ test("a missing default is unavailable and narrow executable controls fit", asyn
 
 test("a deleted selected custom file remains custom and unavailable", async ({ page }) => {
     const deleted = "C:\\Removed Tools\\adb.exe";
-    await mock(page, { saved_paths: { adb_path: deleted }, missing_custom: [deleted] });
+    await mock(page, { advanced_adb: true, saved_paths: { adb_path: deleted }, missing_custom: [deleted] });
     await page.goto("/settings");
     await expect(page.getByLabel("ADB executable", { exact: true })).toHaveValue(deleted);
     await expect(page.getByText("Custom executable unavailable", { exact: true })).toBeVisible();
@@ -102,9 +129,11 @@ test("the affirmative update label and executable status are translated", async 
     await page.getByRole("combobox").selectOption("it");
     await expect(page.getByRole("checkbox", { name: "Controlla automaticamente gli aggiornamenti", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "Controlla gli aggiornamenti ora", exact: true })).toBeVisible();
+    await page.getByRole("checkbox", { name: "Mostra i controlli avanzati", exact: true }).check();
     await page.getByRole("combobox").selectOption("ja");
     await expect(page.getByRole("checkbox", { name: "更新を自動的に確認する", exact: true })).toBeVisible();
     await expect(page.getByRole("button", { name: "今すぐ更新を確認する", exact: true })).toBeVisible();
+    await expect(page.getByRole("checkbox", { name: "詳細設定を表示", exact: true })).toBeChecked();
     await expect(page.getByText("同梱の既定の実行ファイルを使用中", { exact: true })).toHaveCount(2);
     await expect(page.getByLabel("ADB 実行ファイル", { exact: true })).toBeVisible();
 });

@@ -1,0 +1,18 @@
+---
+description: Keep advanced settings together behind the shared Settings toggle
+alwaysApply: true
+---
+
+# Advanced settings
+
+- Use **Show advanced controls** as the shared Settings toggle. Place ADB server
+  controls, SCRCPY/ADB executable locations, version management, and future options
+  designated as advanced inside the same conditional section below the toggle card.
+- Keep language, automatic/manual update checks, and Remember SCRCPY config in
+  the main settings section unless the owner requests a different classification.
+- Preserve saved settings and active executable overrides when the section is
+  hidden. The legacy `setting.advanced_adb` key stores the shared visibility choice
+  for compatibility; hiding controls does not disable the underlying features.
+- Preserve the toggle's viewport position and focus when revealing/hiding content,
+  allowing only the browser's normal scroll limit when the document becomes shorter.
+- Reuse the original app's components, card layout, typography, and theme.

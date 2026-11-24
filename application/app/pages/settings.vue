@@ -42,24 +42,26 @@
             </div>
         </div>
 
-        <adb_controls v-if="advanced_adb" />
+        <div v-if="advanced_controls">
+            <adb_controls />
 
-        <div class="card bg-base-200 w-full mb-8">
-            <div class="card-body min-w-0">
-                <div v-for="bin in binaries" :key="bin.key" class="mb-4">
-                    <label :for="bin.key">{{ $t(bin.title) }}</label>
-                    <div class="flex flex-wrap gap-2">
-                        <input :id="bin.key" type="text" class="input flex-1 basis-56 min-w-0" readonly :value="binary_status[bin.key]?.path || paths[bin.key]" :placeholder="$t('loading')" :aria-describedby="`${bin.key}_status`" />
-                        <button class="btn btn-primary text-white" :disabled="binary_busy" @click="pick_binary(bin)">{{ $t('browse') }}</button>
-                        <button v-if="paths[bin.key]" class="btn text-white" :disabled="binary_busy" @click="clear_binary(bin)">{{ $t('reset') }}</button>
+            <div class="card bg-base-200 w-full mb-8">
+                <div class="card-body min-w-0">
+                    <div v-for="bin in binaries" :key="bin.key" class="mb-4">
+                        <label :for="bin.key">{{ $t(bin.title) }}</label>
+                        <div class="flex flex-wrap gap-2">
+                            <input :id="bin.key" type="text" class="input flex-1 basis-56 min-w-0" readonly :value="binary_status[bin.key]?.path || paths[bin.key]" :placeholder="$t('loading')" :aria-describedby="`${bin.key}_status`" />
+                            <button class="btn btn-primary text-white" :disabled="binary_busy" @click="pick_binary(bin)">{{ $t('browse') }}</button>
+                            <button v-if="paths[bin.key]" class="btn text-white" :disabled="binary_busy" @click="clear_binary(bin)">{{ $t('reset') }}</button>
+                        </div>
+                        <p :id="`${bin.key}_status`" class="mt-2" :class="binary_status[bin.key]?.available === false ? 'text-error' : ''">{{ binary_status[bin.key] ? $t(binary_message(binary_status[bin.key])) : $t('loading') }}</p>
+                        <p v-if="binary_status[bin.key]?.invalid" class="text-error break-all" role="alert">{{ $t('binary_invalid_override') }} {{ binary_status[bin.key].requested }}</p>
                     </div>
-                    <p :id="`${bin.key}_status`" class="mt-2" :class="binary_status[bin.key]?.available === false ? 'text-error' : ''">{{ binary_status[bin.key] ? $t(binary_message(binary_status[bin.key])) : $t('loading') }}</p>
-                    <p v-if="binary_status[bin.key]?.invalid" class="text-error break-all" role="alert">{{ $t('binary_invalid_override') }} {{ binary_status[bin.key].requested }}</p>
+                    <p v-if="binary_error" class="text-error break-words" role="alert">{{ binary_error }}</p>
+                    <NuxtLink to="/scrcpy_manager">
+                        <button class="btn btn-primary text-white">{{ $t('manage_versions') }}</button>
+                    </NuxtLink>
                 </div>
-                <p v-if="binary_error" class="text-error break-words" role="alert">{{ binary_error }}</p>
-                <NuxtLink to="/scrcpy_manager">
-                    <button class="btn btn-primary text-white">{{ $t('manage_versions') }}</button>
-                </NuxtLink>
             </div>
         </div>
 
@@ -79,7 +81,7 @@ export default {
             settings: [
                 { key: "setting.disable_update_check", title: "check_updates", inverted: true, checked: localStorage.getItem("setting.disable_update_check") !== "true" },
                 { key: "setting.save_scrcpy_config",   title: "rscrcpy_config", checked: localStorage.getItem("setting.save_scrcpy_config") === "true" },
-                { key: "setting.advanced_adb", title: "adb_advanced_setting", checked: localStorage.getItem("setting.advanced_adb") === "true" }
+                { key: "setting.advanced_adb", title: "advanced_setting", checked: localStorage.getItem("setting.advanced_adb") === "true" }
             ],
             is_windows: false,
             binary_status: {},
@@ -87,7 +89,7 @@ export default {
             binary_busy: false,
             binary_request: 0,
             binary_disposed: false,
-            advanced_adb: localStorage.getItem("setting.advanced_adb") === "true",
+            advanced_controls: localStorage.getItem("setting.advanced_adb") === "true",
             binaries: [
                 { key: "scrcpy_path", title: "scrcpy_executable" },
                 { key: "adb_path",    title: "adb_executable" }
@@ -105,7 +107,7 @@ export default {
             setting.checked = event.target.checked;
             const value = setting.inverted ? !setting.checked : setting.checked;
             localStorage.setItem(key, value);
-            if (key === "setting.advanced_adb") this.advanced_adb = event.target.checked;
+            if (key === "setting.advanced_adb") this.advanced_controls = event.target.checked;
             console.log(key, value);
         },
         async apply_binary_paths() {

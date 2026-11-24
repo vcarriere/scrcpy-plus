@@ -28,7 +28,7 @@
     "adb_details_unavailable": "取得できません",
     "adb_shared_server": "このサーバーは他のアプリと共有される場合があります。実行ファイルから起動したアプリを特定することはできません。",
     "adb_different_server": "実行中のサーバーは異なる ADB 実行ファイルまたはバージョンを使用しています。起動操作では実行中のサーバーを置き換えません。停止すると、使用中の他のアプリも切断されます。",
-    "adb_advanced_setting": "ADB の詳細設定を表示",
+    "advanced_setting": "詳細設定を表示",
     "adb_state_checking": "確認中…",
     "adb_state_running": "実行中",
     "adb_refresh_paused": "デバイスの更新は一時停止中です。",

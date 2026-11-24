@@ -58,7 +58,10 @@ The window title is "SCRCPY+ Test Build" and this build uses a separate settings
 profile: me.vcarriere.scrcpy-plus.preview. Your installed app and its settings
 and password helper are not replaced or imported.
 
-1. Open Settings and enable "Show advanced ADB controls".
+1. Open Settings and enable "Show advanced controls". This reveals ADB management,
+   executable locations, and Manage versions together. Language, update checks,
+   and Remember SCRCPY config stay in the main section. Saved toggle choices and
+   executable overrides are preserved when advanced controls are hidden.
 2. Check the ADB status dot and Running/Stopped text.
 3. With mirror sessions closed, click Stop ADB and confirm. This stops the shared
    ADB server and disconnects devices used by other apps too.
@@ -73,7 +76,7 @@ and password helper are not replaced or imported.
    most once every 30 seconds while the Devices page is active. It does not use
    an old debugging port. A changed IP or a first connection can still need the
    current endpoint manually. Intentional Stop also pauses this recovery.
-7. In Advanced ADB controls, compare the selected client's executable/version
+7. In the advanced section's ADB card, compare the selected client's executable/version
    with the running server's executable/version and endpoint. A different server
    is explained; its binary does not prove which app started it. These details
    must not start or replace the server.
@@ -105,7 +108,7 @@ and password helper are not replaced or imported.
     Choose another route with its radio control; Start SCRCPY uses that route.
     Disconnect removes only that wireless path. Unknown identities remain
     separate. Equal-model devices have distinguishing suffixes.
-12. Settings shows the effective SCRCPY/ADB executable paths and whether they
+12. The advanced section shows effective SCRCPY/ADB executable paths and whether they
     use a bundled/system default or a custom executable. Missing saved overrides
     explain their fallback; missing selected tools show Unavailable. Reset clears
     only that tool's override. Reading status does not execute either tool.
@@ -115,9 +118,9 @@ and password helper are not replaced or imported.
     narrow windows. It shows progress, current/newer-version results, or an error
     you can retry. Neither check installs updates. Expanded ADB/scrcpy update
     checks remain on the backlog. Running ADB markers use the app's purple theme
-    in both the main-page version information and Advanced ADB controls.
-14. While partway down Settings, toggle "Show advanced ADB controls" on/off
-    using the pointer or Space key. The ADB card opens below the toggle card
+    in both the main-page version information and the advanced section's ADB card.
+14. While partway down Settings, toggle "Show advanced controls" on/off
+    using the pointer or Space key. The advanced cards open below the toggle card
     without moving the toggle or focus. Closing it keeps the visible position
     wherever the shorter document's scroll limits allow.
 

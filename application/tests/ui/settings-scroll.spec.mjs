@@ -34,9 +34,9 @@ for (const scenario of [
         await page.setViewportSize({ width: scenario.width, height: scenario.height });
         await mock(page);
         await page.goto("/settings");
-        await expect(page.getByText("Using bundled default", { exact: true })).toHaveCount(2);
+        await expect(page.getByText("Using bundled default", { exact: true })).toHaveCount(0);
         if (scenario.scaled) await page.addStyleTag({ content: "html { font-size: 20px; overflow-anchor: none; }" });
-        const toggle = page.getByRole("checkbox", { name: "Show advanced ADB controls", exact: true });
+        const toggle = page.getByRole("checkbox", { name: "Show advanced controls", exact: true });
         await toggle.scrollIntoViewIfNeeded();
         await page.evaluate(() => scrollTo(0, 120));
         await toggle.focus();
@@ -45,6 +45,7 @@ for (const scenario of [
         if (scenario.keyboard) await toggle.press("Space");
         else await toggle.click();
         await expect(page.getByRole("button", { name: "Stop ADB", exact: true })).toBeVisible();
+        await expect(page.getByText("Using bundled default", { exact: true })).toHaveCount(2);
         await rendered(page);
         const opened = await position(toggle);
         console.log(`${scenario.name}: toggle ${before.top}px -> ${opened.top}px`);
@@ -56,6 +57,7 @@ for (const scenario of [
         if (scenario.keyboard) await toggle.press("Space");
         else await toggle.click();
         await expect(page.getByRole("button", { name: "Stop ADB", exact: true })).toHaveCount(0);
+        await expect(page.getByLabel("ADB executable", { exact: true })).toHaveCount(0);
         await rendered(page);
         expect_stable(opened, await position(toggle));
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -66,7 +68,7 @@ test("collapsing advanced controls respects the shorter page's scroll limit", as
     await page.setViewportSize({ width: 600, height: 500 });
     await mock(page, { advanced_adb: true });
     await page.goto("/settings");
-    const toggle = page.getByRole("checkbox", { name: "Show advanced ADB controls", exact: true });
+    const toggle = page.getByRole("checkbox", { name: "Show advanced controls", exact: true });
     await expect(page.getByRole("button", { name: "Stop ADB", exact: true })).toBeVisible();
     await toggle.focus();
     await toggle.evaluate(input => scrollTo(0, input.getBoundingClientRect().top + scrollY - 30));

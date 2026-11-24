@@ -28,7 +28,7 @@
     "adb_details_unavailable": "Not available",
     "adb_shared_server": "This server can be shared with other apps. Its executable does not identify which app started it.",
     "adb_different_server": "The running server uses a different ADB executable or version. Start does not replace a running server. Stop also disconnects other apps using it.",
-    "adb_advanced_setting": "Show advanced ADB controls",
+    "advanced_setting": "Show advanced controls",
     "adb_state_checking": "Checking…",
     "adb_state_running": "Running",
     "adb_refresh_paused": "Device refresh paused.",
