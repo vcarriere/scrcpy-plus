@@ -1,4 +1,12 @@
 {
+    "install_custom_preserved": "The release was downloaded. Existing ADB or custom executable selections were kept. You can change them in Advanced settings.",
+    "download_complete": "Download complete",
+    "version_unavailable": "Unavailable",
+    "version_check_failed": "Version information could not be read.",
+    "wireless_invalid_endpoint": "Enter an IP address or host name and a port from 1 to 65535, for example 192.168.1.10:5555 or [fe80::1]:5555.",
+    "wireless_invalid_code": "Enter the six-digit pairing code shown on the phone.",
+    "wireless_pair_failed": "Pairing failed. Check the pairing address and code and try again.",
+    "wireless_connect_failed": "Connection failed. Check the phone’s current wireless debugging address and try again.",
     "protected_screen_automatic": "Temporarily turn on phone screen for protected screens",
     "screen_auto_starting": "Waiting for the mirroring session to turn the phone screen off…",
     "screen_auto_monitoring": "Automatic screen switching is active.",
@@ -142,7 +150,7 @@
         "--raw-key-events": "Raw key events",
         "--no-key-repeat": "Disable key repeat",
         "--show-touches": "Show touches",
-        "--lock-video-orientation": "Lock screen rotation"
+        "--capture-orientation=@": "Lock screen rotation"
     },
     "scrcpy_flags": {
         "--no-video"               : "Stream only the phone's audio, without showing its screen",
@@ -160,6 +168,6 @@
         "--raw-key-events"         : "The opposite of 'prefer text'",
         "--no-key-repeat"          : "By default, holding a key down generates repeated key events. This can cause performance problems in some games, where these events are useless anyway.",
         "--show-touches"           : "Show physical touches and clicks",
-        "--lock-video-orientation" : "Prevent the device screen from rotating."
+        "--capture-orientation=@" : "Prevent the device screen from rotating."
     }
 }

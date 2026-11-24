@@ -1,4 +1,12 @@
 {
+    "install_custom_preserved": "ダウンロードが完了しました。既存の ADB またはカスタム実行ファイルの選択は維持されています。詳細設定で変更できます。",
+    "download_complete": "ダウンロード完了",
+    "version_unavailable": "利用不可",
+    "version_check_failed": "バージョン情報を読み取れませんでした。",
+    "wireless_invalid_endpoint": "IP アドレスまたはホスト名と、1～65535 のポートを入力してください。例: 192.168.1.10:5555 または [fe80::1]:5555。",
+    "wireless_invalid_code": "スマートフォンに表示された6桁のペア設定コードを入力してください。",
+    "wireless_pair_failed": "ペア設定に失敗しました。アドレスとコードを確認して、もう一度お試しください。",
+    "wireless_connect_failed": "接続に失敗しました。スマートフォンの現在のワイヤレス デバッグ アドレスを確認して、もう一度お試しください。",
     "protected_screen_automatic": "保護された画面ではスマートフォンの画面を一時的にオンにする",
     "screen_auto_starting": "ミラーセッションがスマートフォンの画面をオフにするのを待っています…",
     "screen_auto_monitoring": "画面の自動切り替えが有効です。",
@@ -117,6 +125,6 @@
         "--raw-key-events"         : "「テキストを優先する」の反対をします。",
         "--no-key-repeat"          : "既定では、キーを押し続けることでキーイベントが繰り返し発生します。しかし、これらのイベントが役に立たないゲームでは、パフォーマンスに問題が生じる可能性があります。",
         "--show-touches"           : "物理的なタッチとクリックを表示します。",
-        "--lock-video-orientation" : "デバイスの画面の回転を抑制します。"
+        "--capture-orientation=@" : "デバイスの画面の回転を抑制します。"
     }
 }

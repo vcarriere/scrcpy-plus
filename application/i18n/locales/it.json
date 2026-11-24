@@ -1,4 +1,12 @@
 {
+    "install_custom_preserved": "La versione è stata scaricata. Le selezioni esistenti di ADB e degli eseguibili personalizzati sono state mantenute. Puoi cambiarle nelle impostazioni avanzate.",
+    "download_complete": "Download completato",
+    "version_unavailable": "Non disponibile",
+    "version_check_failed": "Impossibile leggere le informazioni sulla versione.",
+    "wireless_invalid_endpoint": "Inserisci un indirizzo IP o un nome host e una porta da 1 a 65535, ad esempio 192.168.1.10:5555 o [fe80::1]:5555.",
+    "wireless_invalid_code": "Inserisci il codice di associazione a sei cifre mostrato sul telefono.",
+    "wireless_pair_failed": "Associazione non riuscita. Controlla indirizzo e codice e riprova.",
+    "wireless_connect_failed": "Connessione non riuscita. Controlla l’indirizzo attuale del debug wireless sul telefono e riprova.",
     "protected_screen_automatic": "Accendi temporaneamente lo schermo per le schermate protette",
     "screen_auto_starting": "In attesa che la sessione spenga lo schermo del telefono…",
     "screen_auto_monitoring": "Cambio automatico dello schermo attivo.",

@@ -3,8 +3,9 @@
         <div class="card-body">
             <!--   Version Information   -->
             <p class="card-title"><span class="font-bold">SCRCPY+</span> <span>{{ version.scrcpy_plus }}</span></p>
-            <p><span class="font-bold">SCRCPY</span>  <span>{{ version.scrcpy }}</span></p>
-            <p class="flex flex-wrap items-center gap-x-2 gap-y-1"><span class="font-bold">ADB</span> <span>{{ version.adb }}</span> <adb_status class="ml-auto text-sm" /></p>
+            <p><span class="font-bold">SCRCPY</span>  <span>{{ version.scrcpy || $t('version_unavailable') }}</span></p>
+            <p class="flex flex-wrap items-center gap-x-2 gap-y-1"><span class="font-bold">ADB</span> <span>{{ version.adb || $t('version_unavailable') }}</span> <adb_status class="ml-auto text-sm" /></p>
+            <p v-if="version_error" class="text-error" role="alert">{{ $t('version_check_failed') }}</p>
             <p v-if="status.paused" class="text-sm">
                 {{ $t('adb_paused') }}
                 <NuxtLink class="link" to="/settings">{{ $t('settings') }}</NuxtLink>
@@ -36,6 +37,7 @@ export default {
     },
     data() {
         return {
+            version_error: false,
             version: {
                 scrcpy_plus: "",
                 scrcpy: "",
@@ -44,7 +46,11 @@ export default {
         }
     },
     async mounted() {
-        this.version = await invoke("get_dependency_versions");
+        try {
+            this.version = await invoke("get_dependency_versions");
+        } catch (e) {
+            this.version_error = true;
+        }
     }
 }
 </script>

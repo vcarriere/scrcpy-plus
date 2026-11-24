@@ -105,13 +105,13 @@ export default {
     setup() {
         // Shared state so running sessions survive navigating between pages
         const running = useState("scrcpy_running", () => ({}));
-        const bitrate = useState("scrcpy_bitrate", () => 8);
         const { available: adb_available } = useAdbStatus();
-        return { running, bitrate, adb_available };
+        return { running, adb_available };
     },
     data() {
         return {
             active_args: [],
+            bitrate: 8,
             automatic_screen: false,
             launch_error: "",
             custom_flags: "",
@@ -134,7 +134,7 @@ export default {
                 { arg: "--keyboard=uhid" },
             ],
             window_options: [
-                { arg: "--lock-video-orientation" },
+                { arg: "--capture-orientation=@" },
                 { arg: "--no-video" },
             ],
             advanced_options: [
@@ -213,7 +213,7 @@ export default {
                 const saved = JSON.parse(localStorage.getItem("scrcpyplus.scrcpy_config"));
                 if (!saved) return;
                 const known = [...this.basic_options, ...this.window_options, ...this.advanced_options].map(o => o.arg);
-                if (Array.isArray(saved.active_args)) this.active_args = saved.active_args.filter(a => known.includes(a));
+                if (Array.isArray(saved.active_args)) this.active_args = [...new Set(saved.active_args.map(a => a === '--lock-video-orientation' ? '--capture-orientation=@' : a).filter(a => known.includes(a)))];
                 this.automatic_screen = saved.automatic_screen === true;
                 if (typeof saved.custom_flags == "string") this.custom_flags = saved.custom_flags;
                 this.custom_window_name = saved.custom_window_name === true;

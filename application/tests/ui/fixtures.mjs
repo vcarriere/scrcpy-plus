@@ -3,6 +3,7 @@ export async function mock(page, options = {}) {
         if (!sessionStorage.getItem("scrcpyplus.test_initialized")) {
             if (options.update_preference !== null) localStorage.setItem("setting.disable_update_check", String(options.update_preference ?? true));
             if (options.advanced_adb !== undefined) localStorage.setItem("setting.advanced_adb", String(options.advanced_adb));
+            if (options.last_ip_port) localStorage.setItem("scrcpyplus.last_ip_port", options.last_ip_port);
             for (const [key, value] of Object.entries(options.saved_paths || {})) localStorage.setItem(`scrcpyplus.${key}`, value);
             if (options.remember_config) {
                 localStorage.setItem("setting.save_scrcpy_config", "true");
@@ -59,7 +60,10 @@ export async function mock(page, options = {}) {
                 state.server = args.start ? "running" : "stopped";
                 return snapshot();
             }
-            if (command === "get_dependency_versions") return { scrcpy_plus: "3.1.0", scrcpy: "5.0.1", adb: "37.0.1" };
+            if (command === "get_dependency_versions") {
+                if (state.version_fail) throw "Simulated version query failure";
+                return state.versions || { scrcpy_plus: "3.1.0", scrcpy: "5.0.1", adb: "37.0.1" };
+            }
             if (command === "environment") return { is_windows: true, os: "windows", arch: "x86_64", app_version: "3.1.0", releases_url: "https://api.github.com/repos/Frontesque/scrcpy-plus/releases" };
             if (command === "get_device_inventory") {
                 if (state.paused) throw "ADB is paused";
@@ -82,6 +86,11 @@ export async function mock(page, options = {}) {
             if (command === "exec_adb") {
                 if (args.args[0] === "--version") return "Android Debug Bridge version 1.0.41";
                 if (state.paused) throw "ADB is paused";
+                if (["pair", "connect"].includes(args.args[0])) {
+                    const output = args.args[0] === "pair" ? state.pair_output ?? `Successfully paired to ${args.args[1]}` : state.connect_output ?? `connected to ${args.args[1]}`;
+                    if (state.wireless_deferred) return new Promise(resolve => { state.finish_wireless = () => resolve(output); });
+                    return output;
+                }
                 if (args.args[0] === "devices") return "List of devices attached\n" + state.devices;
                 return "Synthetic device property";
             }
