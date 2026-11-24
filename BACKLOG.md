@@ -512,6 +512,21 @@ toggle. A separate collapse check covers the shorter document's scroll limit.
 The shared advanced section now also contains executable locations and version
 management, with the same stable-position behavior and saved visibility choice.
 
+### 17. Review and reduce button and field heights
+
+- [ ] Review the current button and input-field heights, using **Connect
+      Wirelessly** as the owner's preferred sizing reference. Include the SCRCPY
+      and ADB executable path fields and their Browse/Reset buttons.
+- [ ] Reduce excessive height and vertical padding where appropriate. Keep
+      related buttons and fields aligned, preserve the existing theme and
+      typography, and retain the compact update button's alignment with its toggle.
+- [ ] Check text/icon clipping, focus indicators, keyboard operation, narrow
+      windows, larger text, and display scaling. Keep controls readable and easy
+      to use without overlaps.
+
+Acceptance: buttons and fields feel consistently compact, guided by the Connect
+Wirelessly button's proportions, with readable contents and aligned controls.
+
 ## Delivery order and verification
 
 Begin the bug review (09) before feature work; carry its confirmed fixes through
