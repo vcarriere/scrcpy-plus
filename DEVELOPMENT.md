@@ -75,7 +75,7 @@ Set-Location src-tauri
 cargo test --lib
 ```
 
-- Fifty-two Rust tests cover passive protocol queries, a non-ADB endpoint, closed
+- Sixty-nine Rust tests cover passive protocol queries, a non-ADB endpoint, closed
   ports, independent endpoints, paused-command/session guards, launch failure,
   unsuccessful exit status, automatic recovery, stale observations around Stop,
   known-peer learning, cache bounds/expiry, local subnet/server restrictions,
@@ -90,7 +90,7 @@ cargo test --lib
   executable resolution, missing/deleted overrides, wrapper non-execution,
   shared manual/automatic protection signals, stable visible-window snapshots,
   captured-client deadlines, and cancellation of stalled optional metadata.
-- Fifty headless Chromium tests exercise the actual built frontend with synthetic
+- Seventy headless Chromium tests exercise the actual built frontend with synthetic
   Tauri responses: optional controls/status text, cancellation, Stop across page
   navigation and multiple refresh cycles, Start recovery, errors/active sessions,
   offline/unauthorized states, an external restart automatically restoring device
@@ -167,6 +167,16 @@ those paths without changing the system installation. These SDK packages and the
 portable Node runtime are not part of the app or the repository distribution.
 
 ## Executable defaults and update-setting wording
+
+The [original-code review](BUG_REVIEW.md) records the completed backlog 09 pass
+and its source evidence. It adds staged/rollback-safe release extraction,
+serialized installations, preservation of selected tools, Windows ARM64 asset
+matching, executable-adjacent Windows defaults, script-safe version diagnostics,
+wireless validation/lifetime fixes, rotation-flag migration, and consistent
+Remember-config behavior. Full final-project review remains backlog 18.
+The 69 native and 70 headless UI checks pass; live device/server tests remain
+explicit opt-ins. Download dependencies now use stable ureq 3.5.2 and zip 9.8.2,
+with updated lockfiles and retained MIT notices.
 
 Settings shows each tool's effective path with bundled, system-PATH, custom, or
 unavailable status. The native resolver uses the same requested/effective path

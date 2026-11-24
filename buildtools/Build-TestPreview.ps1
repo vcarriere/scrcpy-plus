@@ -126,6 +126,14 @@ and password helper are not replaced or imported.
     using the pointer or Space key. The advanced cards open below the toggle card
     without moving the toggle or focus. Closing it keeps the visible position
     wherever the shorter document's scroll limits allow.
+15. Original-code bug fixes: bundled Windows tool paths resolve beside this
+    executable even if started from another folder. Version diagnostics do not
+    run custom script launchers. Downloads stage/validate before activation,
+    preserve selected ADB/custom tools, and report failures without wiping the
+    working copy. Close sessions before installing; native installation also
+    blocks overlapping commands. Wireless setup validates inputs and ignores
+    replies/timers after leaving the page. Saved rotation flags migrate to the
+    current scrcpy option. See BUG_REVIEW.md in the source for evidence and limits.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI

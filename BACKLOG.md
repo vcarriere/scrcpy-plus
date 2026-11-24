@@ -262,15 +262,16 @@ This is a prerequisite for dependable native unlock and useful ADB error status.
 
 ### 07. Make updates preserve working tools, overrides, and chosen versions
 
-- [ ] `install_scrcpy_release` currently overwrites both saved binary paths.
+- [x] `install_scrcpy_release` previously overwrote both saved binary paths.
       Preserve explicit custom tools and native unlock preferences; make changes
       deliberate and reversible.
-- [ ] `download_and_extract` currently removes an existing version directory
+- [x] `download_and_extract` previously removed an existing version directory
       before extraction. Stage and validate first, then activate; an extraction
       failure must not destroy the working copy.
 
-These are source-confirmed implementation behaviors, not claims of a reproduced
-failure in the installed app. Fold the fixes into item 02 where practical.
+The original-code review fixed these two inherited behaviors with isolated
+regressions; see [BUG_REVIEW.md](BUG_REVIEW.md). The automatic-update/version-choice
+features below remain separate future work.
 
 - [ ] After a successful manual ADB or scrcpy version change, automatically
       disable automatic updates so the selected version is retained. Persist
@@ -298,30 +299,35 @@ failure in the installed app. Fold the fixes into item 02 where practical.
 
 ## General bug review and fixes
 
-### 09. Check for existing bugs and fix confirmed problems
+### 09. Review the original code and fix confirmed problems
 
-Priority: start before feature implementation and continue with each change.
+Scope: the original upstream code at `30ee624b37d28c79af03517b713f95026d388266`,
+compared with the current fork. The separate final-project review is item 18.
 
-- [ ] Review the existing source and relevant upstream issues/fixes for bugs in
+- [x] Review the existing source and relevant upstream issues/fixes for bugs in
       startup, session shutdown, device selection, USB/wireless reconnects, saved
       settings, custom binary paths, downloads/updates, and error reporting.
-- [ ] Check UI behavior, translations, invalid inputs, timeouts, overlapping
+- [x] Check UI behavior, translations, invalid inputs, timeouts, overlapping
       operations, and process/resource cleanup. Include the supporting fixes in
       items 06–08 rather than duplicating their work.
-- [ ] Record each finding with reproduction steps or specific source evidence,
+- [x] Record each finding with reproduction steps or specific source evidence,
       expected versus actual behavior, affected versions/platforms, and priority.
       Keep suspected bugs separate from confirmed findings.
-- [ ] Prioritize crashes, data/settings loss, wrong-device actions, credential
+- [x] Prioritize crashes, data/settings loss, wrong-device actions, credential
       handling, and broken core workflows before cosmetic issues. Reuse suitable
       upstream fixes with attribution and license compliance.
-- [ ] Fix confirmed problems in small, reviewable changes. Add focused regression
+- [x] Fix confirmed problems in small, reviewable changes. Add focused regression
       checks where they meaningfully prevent recurrence, then verify the affected
       workflow and record any remaining device/platform testing.
-- [ ] Repeat the relevant checks after each new feature to catch regressions in
-      existing behavior.
+- [x] Run the relevant regression checks for this original-code pass. Continue
+      affected checks during feature work; reserve the final integrated pass for 18.
 
 Acceptance: findings are tracked with evidence and disposition; each completed
 fix has verification results. Do not mark unresolved or untested behavior fixed.
+
+Original-code review completed. [BUG_REVIEW.md](BUG_REVIEW.md) records the fixed
+defects, related upstream issues, checks, and the remaining low-priority/product
+and cross-platform follow-ups. This is a scoped review, not a bug-free guarantee.
 
 ## Device list and connection presentation
 
@@ -526,6 +532,27 @@ management, with the same stable-position behavior and saved visibility choice.
 
 Acceptance: buttons and fields feel consistently compact, guided by the Connect
 Wirelessly button's proportions, with readable contents and aligned controls.
+
+### 18. Final-project bug review and regression fixes
+
+Run after the planned features and fixes are integrated; keep this separate from
+the original-code review in item 09.
+
+- [ ] Review the complete final fork, including interactions between original
+      code, new features, upgrades, settings migration, and error handling.
+- [ ] Repeat startup/shutdown, session ownership, device selection, USB/wireless
+      reconnects, mDNS recovery, protected-screen switching, native unlock, version
+      management, downloads/rollback, and saved/custom configuration checks for
+      the features actually shipped.
+- [ ] Check translations, keyboard use, narrow windows, display scaling, invalid
+      inputs, overlapping operations, and cleanup. Cover supported platforms and
+      keep synthetic checks distinct from actual device acceptance.
+- [ ] Revisit unresolved findings from item 09; fix confirmed regressions, run
+      affected checks, and record remaining compatibility limits before release.
+- [ ] Complete Italian/Japanese translation coverage and decide whether to wire
+      or remove the original inactive Discord placeholder once a current official
+      destination is known. Include package-install crash recovery, cross-process
+      locking, decompressed-size limits, and real-release/platform acceptance.
 
 ## Delivery order and verification
 
