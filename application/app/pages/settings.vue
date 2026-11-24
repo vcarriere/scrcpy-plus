@@ -28,11 +28,16 @@
                 </p>
 
                 <div v-for="item in settings" :key="item.key">
-                    <label class="mt-8 flex cursor-pointer">
+                    <update_check v-if="item.key === 'setting.disable_update_check'" manual>
+                        <label class="flex flex-1 min-w-48 items-center cursor-pointer">
+                            <input type="checkbox" class="toggle checkbox-primary mr-2 shrink-0" @change="updateSetting(item.key, $event)" :checked="item.checked" />
+                            <p>{{ $t(item.title) }}</p>
+                        </label>
+                    </update_check>
+                    <label v-else class="mt-8 flex cursor-pointer">
                         <input type="checkbox" class="toggle checkbox-primary mr-2" @change="updateSetting(item.key, $event)" :checked="item.checked" />
                         <p>{{ $t(item.title) }}</p>
                     </label>
-                    <update_check v-if="item.key === 'setting.disable_update_check'" manual />
                 </div>
             </div>
         </div>

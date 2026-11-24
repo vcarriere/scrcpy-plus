@@ -111,7 +111,8 @@ and password helper are not replaced or imported.
     only that tool's override. Reading status does not execute either tool.
 13. "Automatically check for updates" controls the existing SCRCPY+ app check.
     "Check for updates now" works whether that setting is on or off and leaves
-    it unchanged. It shows progress, current/newer-version results, or an error
+    it unchanged. The button sits alongside the option and wraps below it in
+    narrow windows. It shows progress, current/newer-version results, or an error
     you can retry. Neither check installs updates. Expanded ADB/scrcpy update
     checks remain on the backlog. Running ADB markers use the app's purple theme
     in both the main-page version information and Advanced ADB controls.

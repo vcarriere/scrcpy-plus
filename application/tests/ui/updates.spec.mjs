@@ -119,6 +119,14 @@ for (const scenario of [
         if (scenario.scaled) await page.addStyleTag({ content: "html { font-size: 20px; }" });
         const button = page.getByRole("button", { name: scenario.label, exact: true });
         await expect(button).toBeVisible();
+        const label_bounds = await page.getByRole("checkbox").first().locator("..").boundingBox();
+        const button_bounds = await button.boundingBox();
+        if (scenario.width === 600) {
+            expect(Math.abs(label_bounds.y + label_bounds.height / 2 - button_bounds.y - button_bounds.height / 2)).toBeLessThanOrEqual(1);
+            expect(button_bounds.x - label_bounds.x - label_bounds.width).toBeGreaterThanOrEqual(7);
+        } else {
+            expect(button_bounds.y - label_bounds.y - label_bounds.height).toBeGreaterThanOrEqual(7);
+        }
         await expect(page.locator('[role="status"] [aria-hidden="true"]')).toHaveClass(/bg-primary/);
         const colors = await page.evaluate(() => {
             const buttons = [...document.querySelectorAll("button.btn-primary:not(:disabled)")];

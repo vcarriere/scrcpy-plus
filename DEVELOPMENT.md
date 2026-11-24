@@ -194,6 +194,9 @@ unusable stable-release feed reports failure rather than claiming to be current.
 New ADB and scrcpy checks, installation, and updater behavior remain deferred
 under item 15. Disabled automatic checks make no background app-release request;
 explicit manual checks remain available. No automatic installation was introduced.
+The manual button sits alongside the automatic-check option at the normal window
+width and wraps below it on narrow windows. Progress and results stay below the
+controls. The existing 22 focused update/settings/scroll checks pass for this layout.
 
 The shared ADB status marker uses the existing theme's primary purple in both
 the main-page version information and Advanced ADB controls. Running/Stopped text

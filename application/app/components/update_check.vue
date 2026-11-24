@@ -1,9 +1,12 @@
 <template>
-    <div v-if="manual || updates.state === 'available'" :class="manual ? 'mt-4' : 'card bg-base-200 w-full mb-8'">
+    <div v-if="manual || updates.state === 'available'" :class="manual ? 'mt-8' : 'card bg-base-200 w-full mb-8'">
         <div :class="manual ? 'flex flex-col items-start gap-2' : 'card-body'">
-            <button v-if="manual" class="btn btn-primary text-white h-auto min-h-12 py-3" :disabled="updates.state === 'checking'" @click="check_updates">
-                <span>{{ $t('check_updates_now') }}</span>
-            </button>
+            <div v-if="manual" class="flex flex-wrap items-center gap-2 w-full">
+                <slot />
+                <button class="btn btn-primary text-white h-auto min-h-12 py-3" :disabled="updates.state === 'checking'" @click="check_updates">
+                    <span>{{ $t('check_updates_now') }}</span>
+                </button>
+            </div>
             <p v-if="manual && ['checking', 'current'].includes(updates.state)" role="status">{{ $t(updates.state === 'checking' ? 'updates_checking' : 'updates_current') }}</p>
             <p v-if="manual && updates.state === 'error'" class="text-error break-words" role="alert">{{ $t('updates_check_failed') }}</p>
 
