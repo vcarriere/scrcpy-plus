@@ -199,6 +199,13 @@ The shared ADB status marker uses the existing theme's primary purple in both
 the main-page version information and Advanced ADB controls. Running/Stopped text
 remains readable independently of color; warning/error states retain their meaning.
 
+Preview v12 was built from clean code commit `ee3fddf`. All 49 headless UI checks
+passed, including manual checks with automatic checking on/off, pending requests
+across navigation, and the existing advanced-panel scroll behavior. Saved English,
+Italian, and Japanese previews were visually reviewed at normal/narrow widths and
+larger text. All 18 portable artifact hashes and the Windows x64 GUI format passed.
+The test browser/server closed; this build was not launched on the owner's desktop.
+
 The Advanced ADB card opens directly below the settings-toggle card. Inserting
 the old panel above it moved the toggle by 580 pixels in the pointer case and
 more in narrow/larger-text cases. The new order preserves its viewport position
