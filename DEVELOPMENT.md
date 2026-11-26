@@ -78,6 +78,13 @@ the existing English/Italian/Japanese layout checks. Offscreen screenshots of
 current and available Settings results were visually reviewed; the isolated
 test server closed afterward. No owner desktop or phone operation was needed.
 
+Portable **v24** was built from clean commit
+`a11452ad7464bad85f2be94ab016751fc0e41cef` at
+`artifacts/adb-controls-preview-v24/Start Test Build.cmd`. All 18 manifest hashes,
+the x64 GUI executable, and separate preview profile were verified. Executable
+SHA-256: `2c784bfcbfb22434c9d56decb1bf4f70d5007d1284783f829b8a65325f767775`.
+The native preview was not opened on the owner's desktop.
+
 ## Faster native unlock and verified timing — November 26, 2026
 
 The next preview embeds a small, original read-only Android diagnostic JAR.
