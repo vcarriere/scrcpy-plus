@@ -244,11 +244,18 @@ pub fn scrcpy(args: Vec<&str>) -> Result<String, String> {
     return execute(&command, args, false);
 }
 
-pub fn run_scrcpy(args: Vec<&str>, automatic_screen: bool) -> Result<String, String> {
+pub fn run_scrcpy(args: Vec<&str>, automatic_screen: bool, selection: Option<&crate::device_inventory::Selection>) -> Result<String, String> {
     let _session = adb_server::begin(true)?;
     let command = scrcpy_path();
+    // Verified sessions across copies of this app share the same phone lease.
+    // An ordinary mirror must not coexist with another copy's private replay.
+    let _ownership = if crate::unlock_store::supported() {
+        selection.and_then(|selection| selection.identity.as_ref()).map(|identity|
+            crate::unlock_store::attempt_lock(&crate::unlock_store::Binding { identity: identity.clone(), user: 0 })).transpose()?
+    } else { None };
+    if let Some(target) = crate::automatic_unlock::enabled(selection)? { return crate::automatic_unlock::run(&command, args, target, automatic_screen); }
     if automatic_screen { return crate::screen_power::run(&command, args); }
-    execute(&command, args, true)
+    crate::screen_power::run_plain(&command, args, selection)
 }
 
 pub fn adb(args: Vec<&str>) -> Result<String, String> {

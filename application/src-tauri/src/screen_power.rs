@@ -23,10 +23,13 @@ static VIDEO_FRAMES: Mutex<Vec<(Instant, u32)>> = Mutex::new(Vec::new());
 
 #[derive(Clone, Serialize)]
 pub struct Status {
-    id: u64,
-    device: String,
+    pub id: u64,
+    pub device: String,
     state: &'static str,
     reason: &'static str,
+    pub automatic_screen: bool,
+    pub unlock_state: Option<&'static str>,
+    pub unlock_reason: Option<&'static str>,
 }
 
 struct Session {
@@ -35,7 +38,7 @@ struct Session {
     control: Arc<AtomicU8>,
 }
 
-struct Registration { id: u64, control: Arc<AtomicU8> }
+pub(crate) struct Registration { pub id: u64, pub control: Arc<AtomicU8> }
 
 struct Preparation;
 
@@ -54,25 +57,36 @@ impl Drop for Preparation {
 
 impl Registration {
     fn new(device: &str, identity: &str) -> Result<Self, String> {
+        Self::managed(device, identity, true)
+    }
+
+    pub(crate) fn managed(device: &str, identity: &str, automatic_screen: bool) -> Result<Self, String> {
         let mut sessions = SESSIONS.lock().unwrap();
         if SHUTTING_DOWN.load(Ordering::SeqCst) { return Err("SCRCPY+ is closing.".into()); }
         let sessions = sessions.get_or_insert_with(HashMap::new);
-        if sessions.values().any(|session| session.identity == identity) {
-            return Err("Automatic screen control is already running for this phone. Close that session first.".into());
+        if sessions.values().any(|session| same_phone(&session.identity, identity)) {
+            return Err("A managed mirroring session is already running for this phone. Close that session first.".into());
         }
         let id = NEXT_SESSION.fetch_add(1, Ordering::Relaxed);
         let control = Arc::new(AtomicU8::new(0));
         sessions.insert(id, Session {
             identity: identity.into(), control: control.clone(),
-            status: Status { id, device: device.into(), state: "starting", reason: "waiting_for_screen_off" },
+            status: Status { id, device: device.into(), state: "starting", reason: "waiting_for_screen_off", automatic_screen, unlock_state: None, unlock_reason: None },
         });
         Ok(Self { id, control })
     }
 
-    fn update(&self, state: &'static str, reason: &'static str) {
+    pub(crate) fn update(&self, state: &'static str, reason: &'static str) {
         if let Some(session) = SESSIONS.lock().unwrap().as_mut().and_then(|sessions| sessions.get_mut(&self.id)) {
             session.status.state = state;
             session.status.reason = reason;
+        }
+    }
+
+    pub(crate) fn unlock(&self, state: &'static str, reason: &'static str) {
+        if let Some(session) = SESSIONS.lock().unwrap().as_mut().and_then(|sessions| sessions.get_mut(&self.id)) {
+            session.status.unlock_state = Some(state);
+            session.status.unlock_reason = Some(reason);
         }
     }
 }
@@ -87,11 +101,41 @@ pub fn statuses() -> Vec<Status> {
     SESSIONS.lock().unwrap().as_ref().map(|sessions| sessions.values().map(|session| session.status.clone()).collect()).unwrap_or_default()
 }
 
+pub(crate) fn status_for(identity: &str) -> Option<Status> {
+    SESSIONS.lock().unwrap().as_ref().and_then(|sessions| sessions.values().find(|session| same_phone(&session.identity, identity)).map(|session| session.status.clone()))
+}
+
+pub(crate) fn stop(identity: &str) -> Result<(), String> {
+    let sessions = SESSIONS.lock().unwrap();
+    let session = sessions.as_ref().and_then(|sessions| sessions.values().find(|session| same_phone(&session.identity, identity))).ok_or("This mirroring session has ended.")?;
+    session.control.store(3, Ordering::SeqCst);
+    Ok(())
+}
+
+pub(crate) fn shutting_down() -> bool { SHUTTING_DOWN.load(Ordering::SeqCst) }
+
+fn same_phone(first: &str, second: &str) -> bool {
+    let serial = |identity: &str| serde_json::from_str::<Vec<String>>(identity).ok().filter(|values| values.len() == 3)
+        .and_then(|mut values| (!values[0].is_empty()).then(|| values.remove(0))).unwrap_or_else(|| identity.to_string());
+    first == second || serial(first) == serial(second)
+}
+
 pub fn control(id: u64, paused: bool) -> Result<(), String> {
     let sessions = SESSIONS.lock().unwrap();
     let session = sessions.as_ref().and_then(|sessions| sessions.get(&id)).ok_or("This mirroring session has ended.")?;
-    session.control.store(if paused { 1 } else { 2 }, Ordering::SeqCst);
+    update_control(&session.control, if paused { 1 } else { 2 }).map_err(|_| "This mirroring session is stopping.")?;
     Ok(())
+}
+
+fn update_control(control: &AtomicU8, requested: u8) -> Result<u8, ()> {
+    let mut current = control.load(Ordering::SeqCst);
+    loop {
+        if current == 3 { return Err(()); }
+        match control.compare_exchange_weak(current, requested, Ordering::SeqCst, Ordering::SeqCst) {
+            Ok(previous) => return Ok(previous),
+            Err(value) => current = value,
+        }
+    }
 }
 
 pub fn shutdown() -> bool {
@@ -106,7 +150,7 @@ pub fn idle() -> bool { statuses().is_empty() && PREPARING.load(Ordering::SeqCst
 pub struct AdbClient { pub path: String, pub socket: String }
 
 impl AdbClient {
-    fn capture() -> Result<Self, String> {
+    pub(crate) fn capture() -> Result<Self, String> {
         Ok(Self { path: system_command::adb_path(), socket: adb_server::endpoint()? })
     }
 
@@ -181,6 +225,15 @@ struct Prepared {
     identity: String,
     user: String,
     client: AdbClient,
+    transport: Option<String>,
+}
+
+impl Prepared {
+    fn args<'a>(&'a self, tail: &[&'a str]) -> Vec<&'a str> {
+        let mut args = if let Some(transport) = &self.transport { vec!["-t", transport.as_str()] } else { vec!["-s", self.device.as_str()] };
+        args.extend_from_slice(tail);
+        args
+    }
 }
 
 fn selector(args: &[&str]) -> Result<String, String> {
@@ -232,7 +285,7 @@ fn prepare(executable: &str, args: &[&str]) -> Result<Prepared, String> {
     }
     let display = client.query(&["-s", &device, "shell", DISPLAY_QUERY], &mut cancelled, false)?;
     if panel(&display).is_none() { return Err("The main physical display's power state could not be verified.".into()); }
-    Ok(Prepared { device, identity, user, client })
+    Ok(Prepared { device, identity, user, client, transport: None })
 }
 
 #[derive(Default)]
@@ -286,8 +339,8 @@ impl Policy {
 }
 
 fn verify_identity(prepared: &Prepared, query: &mut impl FnMut(&[&str]) -> Result<String, String>) -> Result<(), String> {
-    let serial = query(&["-s", &prepared.device, "shell", "getprop", "ro.serialno"])?;
-    let user = query(&["-s", &prepared.device, "shell", "am", "get-current-user"])?;
+    let serial = query(&prepared.args(&["shell", "getprop", "ro.serialno"]))?;
+    let user = query(&prepared.args(&["shell", "am", "get-current-user"]))?;
     if serial.trim() != prepared.identity || user.trim() != prepared.user { return Err("The phone identity or Android user changed.".into()); }
     Ok(())
 }
@@ -302,17 +355,17 @@ fn set_power(prepared: &Prepared, control: &mut screen_power_control::Control, t
 fn change_power(prepared: &Prepared, target: Panel, cleanup: bool, query: &mut impl FnMut(&[&str]) -> Result<String, String>, write: &mut impl FnMut(bool) -> Result<(), String>) -> Result<Change, String> {
     verify_identity(prepared, query)?;
     if !cleanup {
-        let windows = query(&["-s", &prepared.device, "shell", "dumpsys", "window", "visible"])?;
+        let windows = query(&prepared.args(&["shell", "dumpsys", "window", "visible"]))?;
         if protected_screen::visible_protection(&windows) != Some(target == Panel::On) { return Ok(Change::Deferred); }
     }
-    let power = query(&["-s", &prepared.device, "shell", POWER_QUERY])?;
-    let display = query(&["-s", &prepared.device, "shell", DISPLAY_QUERY])?;
+    let power = query(&prepared.args(&["shell", POWER_QUERY]))?;
+    let display = query(&prepared.args(&["shell", DISPLAY_QUERY]))?;
     let expected = if target == Panel::On { Panel::Off } else { Panel::On };
     if !awake(&power) || panel(&display) != Some(expected) { return Ok(Change::Manual); }
     write(target == Panel::On)?;
     let deadline = Instant::now() + Duration::from_secs(2);
     loop {
-        let dump = query(&["-s", &prepared.device, "shell", DISPLAY_QUERY])?;
+        let dump = query(&prepared.args(&["shell", DISPLAY_QUERY]))?;
         if panel(&dump) == Some(target) { return Ok(Change::Applied); }
         if Instant::now() >= deadline { return Err("The phone did not reach the requested display power state.".into()); }
         std::thread::sleep(Duration::from_millis(50));
@@ -320,8 +373,12 @@ fn change_power(prepared: &Prepared, target: Panel, cleanup: bool, query: &mut i
 }
 
 fn spawn(executable: &str, args: &[&str], prepared: &Prepared) -> Result<Child, String> {
+    spawn_client(executable, args, &prepared.client)
+}
+
+pub(crate) fn spawn_client(executable: &str, args: &[&str], client: &AdbClient) -> Result<Child, String> {
     let mut command = Command::new(executable);
-    command.args(args).env("ADB", &prepared.client.path).env("ADB_SERVER_SOCKET", &prepared.client.socket)
+    command.args(args).env("ADB", &client.path).env("ADB_SERVER_SOCKET", &client.socket)
         .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
     #[cfg(windows)]
     command.creation_flags(0x08000000);
@@ -359,6 +416,109 @@ fn spawn(executable: &str, args: &[&str], prepared: &Prepared) -> Result<Child, 
     Ok(child)
 }
 
+pub(crate) struct Monitor {
+    prepared: Prepared,
+    pub channel: screen_power_control::Control,
+    policy: Policy,
+    failures: usize,
+    started: Instant,
+}
+
+impl Monitor {
+    fn from_prepared(executable: &str, prepared: Prepared) -> Result<Self, String> {
+        let channel = if let Some(transport) = &prepared.transport {
+            screen_power_control::Control::start_pinned(executable, &prepared.client, &prepared.device, &prepared.identity, transport.parse().map_err(|_| "The device transport is invalid.")?, &mut shutting_down)?
+        } else { screen_power_control::Control::start(executable, &prepared.client, &prepared.device, &prepared.identity, &mut shutting_down)? };
+        Ok(Self { prepared, channel, policy: Policy::default(), failures: 0, started: Instant::now() })
+    }
+
+    pub(crate) fn new_pinned(executable: &str, args: &[&str], target: &crate::unlock_detection::Target) -> Result<Self, String> {
+        let device = selector(args)?;
+        let name = Path::new(executable).file_name().and_then(|name| name.to_str()).unwrap_or_default();
+        if !name.eq_ignore_ascii_case("scrcpy.exe") && name != "scrcpy" { return Err("Automatic unlock requires the direct scrcpy executable, rather than a launcher or password wrapper.".into()); }
+        if device != target.selection.serial || target.sdk < 35 || target.binding.user != 0 { return Err("The selected phone does not support automatic password unlock.".into()); }
+        let transport = target.selection.transport_id.filter(|id| *id != 0).ok_or("The device transport is unavailable.")?.to_string();
+        Self::from_prepared(executable, Prepared { device, identity: target.hardware_serial.clone(), user: target.binding.user.to_string(), client: target.client.clone(), transport: Some(transport) })
+    }
+
+    pub(crate) fn reset_after_unlock(&mut self) {
+        self.policy = Policy { paused: self.policy.paused, ..Policy::default() };
+        self.started = Instant::now();
+        self.failures = 0;
+    }
+
+    pub(crate) fn tick(&mut self, registration: &Registration, cancelled: &mut impl FnMut() -> bool) {
+        let requested = update_control(&registration.control, 0).unwrap_or(3);
+        match requested {
+            1 => { self.policy.pause(); registration.update("paused", "requested"); },
+            2 => { self.policy = Policy { ready: true, ..Policy::default() }; registration.update("monitoring", "resumed"); },
+            3 => return,
+            _ => {},
+        }
+        if self.policy.paused || cancelled() { return; }
+        let observed = (|| -> Result<_, String> {
+            let windows = self.prepared.client.query(&self.prepared.args(&["shell", "dumpsys", "window", "visible"]), cancelled, false)?;
+            let power = self.prepared.client.query(&self.prepared.args(&["shell", POWER_QUERY]), cancelled, false)?;
+            let display = self.prepared.client.query(&self.prepared.args(&["shell", DISPLAY_QUERY]), cancelled, false)?;
+            Ok((protected_screen::visible_protection(&windows), awake(&power), panel(&display)))
+        })();
+        if cancelled() { return; }
+        match observed {
+            Ok((protected, is_awake, Some(current))) => {
+                let target = self.policy.decide(protected, current, is_awake, Instant::now());
+                if self.policy.paused { registration.update("paused", "manual_override"); return; }
+                if !self.policy.ready {
+                    if self.started.elapsed() > Duration::from_secs(10) { self.policy.pause(); registration.update("paused", "screen_off_unavailable"); }
+                    return;
+                }
+                if protected.is_none() {
+                    self.failures += 1;
+                    if self.failures >= 3 { self.policy.pause(); registration.update("error", "state_unavailable"); }
+                    return;
+                }
+                self.failures = 0;
+                if let Some(target) = target {
+                    if registration.control.load(Ordering::SeqCst) != 0 { return; }
+                    match set_power(&self.prepared, &mut self.channel, target, false, cancelled) {
+                        Ok(Change::Applied) => self.policy.applied(target),
+                        Ok(Change::Deferred) => { self.policy.clear_since = None; return; },
+                        Ok(Change::Manual) => { self.policy.pause(); registration.update("paused", "manual_override"); return; },
+                        Err(_) if !cancelled() => { self.policy.pause(); registration.update("error", "power_failed"); return; },
+                        Err(_) => return,
+                    }
+                }
+                registration.update(if self.policy.owned_on { "screen_on" } else { "monitoring" }, if protected == Some(true) { "protected" } else { "watching" });
+            },
+            _ => {
+                self.policy.clear_since = None;
+                self.failures += 1;
+                if self.failures >= 3 { self.policy.pause(); registration.update("error", "state_unavailable"); }
+            },
+        }
+    }
+}
+
+pub(crate) fn run_plain(executable: &str, args: Vec<&str>, selection: Option<&crate::device_inventory::Selection>) -> Result<String, String> {
+    let _preparing = Preparation::begin()?;
+    let identity = selection.and_then(|selection| selection.identity.as_deref()).unwrap_or_else(|| args.get(1).copied().unwrap_or("unselected"));
+    let device = selection.map(|selection| selection.serial.as_str()).unwrap_or(identity);
+    let registration = Registration::managed(device, identity, false)?;
+    let client = AdbClient::capture()?;
+    let mut child = spawn_client(executable, &args, &client)?;
+    registration.update("mirroring", "no_automatic_screen");
+    loop {
+        if shutting_down() { let _ = child.kill(); let _ = child.wait(); return Ok(String::new()); }
+        if registration.control.load(Ordering::SeqCst) == 3 {
+            let _ = child.kill(); let _ = child.wait(); return Ok(String::new());
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => return if status.success() { Ok(String::new()) } else { Err("The mirroring session ended unsuccessfully.".into()) },
+            Err(_) => { let _ = child.kill(); let _ = child.wait(); return Err("Could not inspect the mirroring session.".into()); },
+            _ => std::thread::sleep(Duration::from_millis(20)),
+        }
+    }
+}
+
 pub fn run(executable: &str, args: Vec<&str>) -> Result<String, String> {
     run_session(executable, args, None)
 }
@@ -367,92 +527,38 @@ fn run_session(executable: &str, args: Vec<&str>, limit: Option<Duration>) -> Re
     let preparing = Preparation::begin()?;
     let prepared = prepare(executable, &args)?;
     let registration = Registration::new(&prepared.device, &prepared.identity)?;
-    let mut control = screen_power_control::Control::start(executable, &prepared.client, &prepared.device, &prepared.identity, &mut || SHUTTING_DOWN.load(Ordering::SeqCst))?;
-    let mut child = spawn(executable, &args, &prepared)?;
+    let mut monitor = Monitor::from_prepared(executable, prepared)?;
+    let mut child = spawn(executable, &args, &monitor.prepared)?;
     drop(preparing);
-    let mut policy = Policy::default();
     let started = Instant::now();
     let mut next = Instant::now() + Duration::from_millis(300);
-    let mut failures = 0;
     loop {
-        if limit.is_some_and(|limit| started.elapsed() >= limit) {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Ok(String::new());
+        if limit.is_some_and(|limit| started.elapsed() >= limit) || registration.control.load(Ordering::SeqCst) == 3 {
+            let _ = child.kill(); let _ = child.wait(); return Ok(String::new());
         }
-        let status = match child.try_wait() {
-            Ok(status) => status,
+        match child.try_wait() {
+            Ok(Some(status)) => return if status.success() { Ok(String::new()) } else { Err("The mirroring session ended unsuccessfully.".into()) },
             Err(_) => { let _ = child.kill(); let _ = child.wait(); return Err("Could not inspect the mirroring session.".into()); },
-        };
-        if let Some(status) = status {
-            return if status.success() { Ok(String::new()) } else { Err("The mirroring session ended unsuccessfully.".into()) };
-        }
-        if SHUTTING_DOWN.load(Ordering::SeqCst) {
-            // The GUI can close while the original mirror remains open. Relinquish
-            // only a temporary On state we still own; never stop a shared server.
-            if policy.owned_on && !policy.paused {
-                let deadline = Instant::now() + Duration::from_secs(3);
-                let mut cancelled = || Instant::now() >= deadline || child.try_wait().ok().flatten().is_some();
-                let _ = set_power(&prepared, &mut control, Panel::Off, true, &mut cancelled);
-            }
-            return Ok(String::new());
-        }
-        match registration.control.swap(0, Ordering::SeqCst) {
-            1 => { policy.pause(); registration.update("paused", "requested"); },
-            2 => { policy = Policy { ready: true, ..Policy::default() }; registration.update("monitoring", "resumed"); },
             _ => {},
         }
-        if policy.paused || Instant::now() < next {
-            std::thread::sleep(Duration::from_millis(20));
-            continue;
+        if shutting_down() {
+            if monitor.policy.owned_on && !monitor.policy.paused {
+                let deadline = Instant::now() + Duration::from_secs(3);
+                let mut cancelled = || Instant::now() >= deadline || child.try_wait().ok().flatten().is_some();
+                let _ = set_power(&monitor.prepared, &mut monitor.channel, Panel::Off, true, &mut cancelled);
+            }
+            let _ = child.kill(); let _ = child.wait();
+            return Ok(String::new());
         }
-        next = Instant::now() + Duration::from_millis(450);
-        let mut cancelled = || SHUTTING_DOWN.load(Ordering::SeqCst) || registration.control.load(Ordering::SeqCst) == 1
-            || child.try_wait().map_or(true, |status| status.is_some());
-        let observed = (|| -> Result<_, String> {
-            let windows = prepared.client.query(&["-s", &prepared.device, "shell", "dumpsys", "window", "visible"], &mut cancelled, false)?;
-            let power = prepared.client.query(&["-s", &prepared.device, "shell", POWER_QUERY], &mut cancelled, false)?;
-            let display = prepared.client.query(&["-s", &prepared.device, "shell", DISPLAY_QUERY], &mut cancelled, false)?;
-            Ok((protected_screen::visible_protection(&windows), awake(&power), panel(&display)))
-        })();
-        if cancelled() { continue; }
-        match observed {
-            Ok((protected, is_awake, Some(current))) => {
-                let target = policy.decide(protected, current, is_awake, Instant::now());
-                if policy.paused { registration.update("paused", "manual_override"); continue; }
-                if !policy.ready {
-                    if started.elapsed() > Duration::from_secs(10) {
-                        policy.pause(); registration.update("paused", "screen_off_unavailable");
-                    }
-                    continue;
-                }
-                if protected.is_none() {
-                    failures += 1;
-                    if failures >= 3 { policy.pause(); registration.update("error", "state_unavailable"); }
-                    continue;
-                }
-                failures = 0;
-                if let Some(target) = target {
-                    if registration.control.load(Ordering::SeqCst) != 0 { continue; }
-                    match set_power(&prepared, &mut control, target, false, &mut cancelled) {
-                        Ok(Change::Applied) => policy.applied(target),
-                        Ok(Change::Deferred) => { policy.clear_since = None; continue; },
-                        Ok(Change::Manual) => { policy.pause(); registration.update("paused", "manual_override"); continue; },
-                        Err(_) if !cancelled() => { policy.pause(); registration.update("error", "power_failed"); continue; },
-                        Err(_) => continue,
-                    }
-                }
-                if policy.ready { registration.update(if policy.owned_on { "screen_on" } else { "monitoring" }, if protected == Some(true) { "protected" } else { "watching" }); }
-            },
-            _ => {
-                policy.clear_since = None;
-                failures += 1;
-                if failures >= 3 { policy.pause(); registration.update("error", "state_unavailable"); }
-            },
+        if Instant::now() >= next {
+            next = Instant::now() + Duration::from_millis(450);
+            let mut cancelled = || shutting_down() || registration.control.load(Ordering::SeqCst) == 3
+                || registration.control.load(Ordering::SeqCst) == 1 || child.try_wait().map_or(true, |status| status.is_some());
+            monitor.tick(&registration, &mut cancelled);
         }
+        std::thread::sleep(Duration::from_millis(20));
     }
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -536,9 +642,29 @@ mod tests {
         drop(second);
     }
 
+    #[test]
+    fn legacy_and_inventory_identity_share_ownership_and_stop_cannot_be_overwritten() {
+        let identity = serde_json::to_string(&["synthetic-shared-hardware", "Example", "phone"]).unwrap();
+        let first = Registration::new("synthetic-legacy-route", "synthetic-shared-hardware").unwrap();
+        assert!(Registration::managed("synthetic-new-route", &identity, false).is_err());
+        assert!(status_for(&identity).is_some());
+        stop(&identity).unwrap();
+        assert!(control(first.id, false).is_err());
+        assert!(control(first.id, true).is_err());
+        assert_eq!(first.control.load(Ordering::SeqCst), 3);
+        drop(first);
+        assert!(status_for(&identity).is_none());
+    }
+
+    #[test]
+    fn pinned_power_queries_do_not_follow_a_reused_wireless_route() {
+        let mut prepared = fixture(); prepared.transport = Some("42".into());
+        assert_eq!(prepared.args(&["shell", "getprop", "ro.serialno"]), ["-t", "42", "shell", "getprop", "ro.serialno"]);
+    }
+
     fn fixture() -> Prepared {
         Prepared { device: "synthetic-route".into(), identity: "synthetic-phone".into(), user: "0".into(),
-            client: AdbClient { path: "unused".into(), socket: "unused".into() } }
+            client: AdbClient { path: "unused".into(), socket: "unused".into() }, transport: None }
     }
 
     fn windows(secure: bool) -> String {

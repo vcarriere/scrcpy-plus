@@ -42,8 +42,8 @@ new backend code.
       remains stopped. Status refresh must not restart the server. When a fresh
       check detects that another tool has started ADB again, automatically resume
       device discovery in place and enable Stop for the running server; do not ask
-      for a GUI restart or manual Resume. Future native authentication/power
-      monitors must use the same lifecycle gate.
+      for a GUI restart or manual Resume. Native authentication/power monitors
+      use the same lifecycle gate.
 - [x] Explain in the Stop action that a shared server may also disconnect Android
       Studio, other scrcpy sessions, and other tools. Do not stop an unrelated
       server automatically when closing SCRCPY+.
@@ -101,206 +101,161 @@ the latest stable version at implementation time instead of hard-coding this.
 Source starting points: `application/src-tauri/src/downloader.rs`,
 `application/app/composables/scrcpy_release.ts`, and item 01's lifecycle code.
 
-### 03. Integrate the existing password implementation into SCRCPY+
+### 03. Native automatic unlock, detection, and future unlock methods
 
-Priority: next, after reliable session ownership (item 06). Feasibility: existing
-local helper provides a reference; the generalized native implementation is new.
+Current scope: automatic method detection and **password unlock only**, following
+the owner's correction. Item 04 is merged here; PIN and nine-dot pattern replay
+remain deferred. The native implementation is in source, with live password
+acceptance still pending. A checked item below means implemented code, not a
+claim that all real-device acceptance checks have passed. The working installed
+app and existing password helper are unchanged and are not automatically migrated.
 
-Agreed delivery order: finish shared session ownership (06); add read-only method
-detection; build per-device enrollment and protected storage; implement guarded
-password replay together with privacy and coordinated screen power; verify
-synthetic regressions and scoped device parity; then offer optional migration.
-Keep PIN support and item 04's pattern adapter as later method-specific work.
-These are planned native features, not capabilities already shipped in the fork.
-
-Detection feasibility confirmed from Android source on November 25, 2026:
-recent AOSP `LockSettingsService` diagnostics report each Android user's
-`CredentialType` through `adb shell dumpsys lock_settings`. The reported types
-are `PIN`, `PASSWORD`, `PATTERN`, and `NONE`; no credential value is recovered.
-The AOSP shell has the required diagnostic permission, so this approach does not
-require root on supported builds with authorized ADB. See
-[Android 16 lock-settings diagnostics](https://android.googlesource.com/platform/frameworks/base/+/android16-release/services/core/java/com/android/server/locksettings/LockSettingsService.java#3485),
-[credential type definitions](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/java/com/android/internal/widget/LockPatternUtils.java#119),
+Detection is source-confirmed and now has a read-only Pixel result: Android's
+`lock_settings` diagnostics reported `PASSWORD` on SDK 37 for Android user 0.
+The phone was safely locked and logically asleep; no credential was retrieved
+or entered for that check. AOSP reports `PIN`, `PASSWORD`, `PATTERN`, or `NONE`
+per Android user, without exposing the credential. See
+[Android lock-settings diagnostics](https://android.googlesource.com/platform/frameworks/base/+/android16-release/services/core/java/com/android/server/locksettings/LockSettingsService.java#3485),
+[credential types](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/java/com/android/internal/widget/LockPatternUtils.java#119),
 and [shell diagnostic permission](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/packages/Shell/AndroidManifest.xml#168).
-This confirms a concrete detection path, not universal manufacturer/version
-compatibility or a test on the owner's Pixel. Configured credential type and the
-currently visible challenge are separate: a password-configured phone can still
-be showing a fingerprint prompt, and an app's authentication prompt is not the
-device's unlock screen. Keep these separate in both the backend and UI.
+This supports an authorized-ADB, root-free detection path on supported builds;
+manufacturer/version compatibility still requires testing. The configured method
+and current visible challenge are separate: a password-configured phone can show
+a fingerprint prompt, and an app's authentication prompt is not device unlock.
 
-- [ ] Move session startup unlock and active-session re-unlock into the native
-      backend, with an opt-in per-device setting and password enrollment UI.
-      Include credential confirmation, replacement/removal, disabled, monitoring,
-      preparing, unlocking, waiting for manual unlock, and unavailable states.
-      Explain that opting in also re-unlocks a deliberate lock while an owned
-      controllable session is active. Do not install a global/startup unlock
-      service or prevent the phone from locking outside that session.
-- [ ] Design the visuals around **Automatic unlock** and an unlock-method model,
-      with reusable enrollment, status, privacy, and recovery areas. Allow future
-      password, PIN, pattern/gesture, and on-phone biometric/manual flows without
-      redesigning the whole section. Use method-specific enrollment controls and
-      expose only implemented choices; keep phone unlock separate from in-app
-      login or reauthentication contexts.
-- [ ] Implement the source-confirmed, read-only configured-method detector for
-      the selected device and verified current Android user. Parse only that
-      user's credential type from bounded diagnostics; do not retain or log the
-      complete dump. Recheck on connection, user changes, enrollment, and before
-      an attempt. Treat missing, denied, malformed, duplicate, unknown, or stale
-      results as unknown, never as `NONE` or permission to try another method.
-      Distinguish no secure credential from an explicitly disabled lock screen
-      only when the required additional state is available.
-- [ ] Show **Detected unlock method: Password / PIN / Pattern / No secure
-      credential / Unknown** separately from the enrolled credential type and
-      current prompt. Independently verify the current main-display SystemUI
-      entry surface. A configured type alone cannot prove the visible editor is
-      ready, authorize input, or select a different saved credential. Explicit
-      method selection may assist setup on unsupported devices but cannot bypass
-      input guards. Stop automatic input on ambiguity, type changes, or mismatch;
-      require explicit re-enrollment when the enrolled method changes.
-      Fingerprint/face prompts represent completion on the phone, not replayable
-      biometric credentials or a bypass; keep them distinct from PIN/password/
-      pattern fallback and in-app authentication.
-- [ ] Keep credentials in OS-protected storage. Never put them in source,
-      ordinary settings/localStorage, command-line arguments, diagnostics, or
-      exported profiles. Keep decryption and injection in the native backend;
-      minimize credential lifetime in memory.
-- [ ] Bind each credential to verified device identity. An IP address or changing
-      wireless endpoint identifies a connection, not the enrolled phone.
-- [ ] Protect the device binding, Android user, credential type, credential
-      generation, and password together in an authenticated OS-protected record.
-      Use established platform credential storage/current-user encryption and
-      restrictive access permissions. Device serials, model names, addresses,
-      and other public identifiers must not be encryption keys or secrets.
-      Editing a plaintext setting or filename must not retarget a saved password.
-- [ ] Reject altered, malformed, substituted, or undecryptable credential records
-      and mismatched device/user bindings before input. Protect persistent attempt
-      state as well; a missing/corrupt state record must not silently authorize
-      another attempt. Use atomic writes and test stale-generation/rollback cases.
-      Re-enrollment or recovery must be explicit; do not silently create replacement
-      credentials or treat ordinary settings as trusted authorization.
-- [ ] Assess device-authentication strength against the intended threat model.
-      Serial/product checks help prevent accidental wrong-device input but are
-      not cryptographic proof against a deliberately spoofed device or ADB host.
-      Investigate pinned device-held keys/challenge verification if that stronger
-      guarantee is required, with any companion-app requirement made explicit.
-- [ ] Port the existing helper's guards: check lock state on the main display,
-      current Android user, focused SystemUI window, and active password editor;
-      require Android to be boot-ready and logically awake, and reject SIM locks,
-      unsupported user/profile states, and occluded entry surfaces. Select
-      display 0 explicitly, reject cached/history editors, and require the same
-      current owner, editor client/display, input type, and focused password
-      window. Do not mistake the fingerprint panel for a password field. Recheck
-      identity and these guards before input, during typing, and before submission.
-- [ ] Skip credential retrieval and input when already unlocked. Disable automatic
-      authentication for view-only/no-control, OTG, ambiguous devices, unrelated
-      displays, and unsupported lock screens.
-- [ ] Preserve the distinction between retryable failures before input and an
-      uncertain/partial credential attempt. Persist an in-flight attempt marker
-      before the first character; clear it after verified successful unlock or
-      an explicitly established zero-input abort. Persist any remaining uncertain
-      attempt block across restarts; clear that block only after verified awake,
-      manually unlocked state for the same device/user. Offer a visible
-      manual-unlock prompt once per block without repeatedly submitting a
-      password. Keep observing so manual recovery resumes the active monitor.
-- [ ] Recover only proven pre-input/transient failures with bounded backoff
-      (the helper uses 5, 10, 20, then at most 30 seconds). Revalidate identity
-      after reconnect and stop authentication if credentials are missing. Retry
-      screen-off restoration independently from authentication; a failed power
-      operation must never cause the password to be submitted again.
-- [ ] Keep credential delivery out of process arguments and shell interpolation;
-      use a native data/control channel with supported character encoding. Verify
-      unlock from current device/user state. Record bounded, fixed diagnostic
-      codes for preparation, submission, and verification rather than sensitive
-      command output. If narrowly scoped Android verification evidence is used,
-      missing or inconclusive log entries must not authorize another attempt.
-- [ ] Tie monitoring and in-flight input to the actual session lifetime. Serialize
-      attempts across concurrent sessions; closing the session must stop its
-      automation. Coordinate screen power with item 05.
-- [ ] Add password-entry privacy: confirm the physical phone panel is off and
-      suppress the mirrored view during automatic credential entry, including
-      recording/capture paths controlled by this app. Keep Android logically
-      awake so the guarded password editor remains usable. A screen-off command
-      alone does not hide the separate scrcpy window; verify a supported renderer
-      or session integration rather than assuming an overlay on the GUI covers it.
-- [ ] Gate this app's keyboard, mouse/touch, and clipboard synchronization during
-      replay so user input cannot move focus or interleave with the password.
-      Assess physical-touch suppression and document limits involving other
-      authorized ADB clients. Recheck privacy/focus before input and submission;
-      abort if a required guard fails and retain the uncertainty block after any
-      partial input. Hand power control back to the protected-screen policy only
-      after verified completion or a safe abort; avoid competing power monitors.
-- [ ] Offer local migration from the existing helper only after native parity is
-      proven. Preserve the working helper until that transition is chosen.
-- [ ] Start with the existing helper's documented 4–64 printable ASCII support;
-      specify broader character/PIN support separately rather than implying it
-      already works. Never convert the owner's password into a PIN assumption.
+- [x] Add **Automatic unlock** to the selected-device controls with detected
+      method, password confirmation/enrollment, replace/remove actions, explicit
+      per-device opt-in, session status, and manual-recovery feedback. Enrollment
+      starts disabled. Enabling it authorizes startup unlock and subsequent relocks,
+      including deliberate locks, only while an owned controllable session runs.
+      No global/startup unlock service or permanent idle-prevention setting is added.
+- [x] Detect the configured method for the verified selected device/current user
+      using bounded, filtered diagnostics. Show Password, PIN, Pattern, No secure
+      credential, or Unknown; expose password enrollment/playback only. Missing,
+      malformed, duplicate, denied, stale, changed, or mismatched state cannot
+      authorize input or silently choose another saved method. Fingerprint/face
+      completion stays on the phone. Non-owner users are not supported for replay.
+- [x] Store separate metadata/attempt and secret records in Windows Credential
+      Manager. Bind both to verified physical identity, Android user, method,
+      schema, and random credential generation; protect the password in the
+      secret record. Public device identifiers label records, never act as keys.
+      Reject invalid/mismatched records and interrupted enrollment generations;
+      fail closed with no plaintext fallback on unsupported platforms. Device IP
+      or mDNS route alone never authorizes credential use.
+- [x] Keep enrollment, decryption, and delivery native; accept 4–64 printable ASCII
+      characters, retain no password in ordinary settings/localStorage/profiles,
+      and zeroize native secret buffers on release. Deliver text through the
+      scrcpy control channel, not shell arguments, interpolation, clipboard, or
+      logs. Already-unlocked monitoring reads metadata only and retrieves no secret.
+- [x] Require Windows, Android 15+ owner user 0, direct scrcpy 5.0.1 with matching
+      server, a local ADB endpoint, and a normal controlled main-display session.
+      Require **Turn off phone screen** and restrict launch arguments to supported
+      standard options. Reject recording/capture sinks, wrappers, OTG/view-only,
+      unrelated/virtual displays, and unsupported custom/control options.
+- [x] Independently verify boot readiness, current owner, identity, lock policy,
+      SIM/occlusion state, logical wakefulness, display 0 focus, current SystemUI
+      password editor/client/input type, and physical panel Off. Ignore cached
+      editor history and reject fingerprint panels as password fields. Require
+      stable readiness; recheck before each character and before Enter, and
+      verify actual awake/unlocked state after submission.
+- [x] Close and wait for this session's mirror before retrieving the secret.
+      Keep only a control-only channel with no video/audio capture or clipboard
+      synchronization; confirm the physical phone panel Off while Android stays
+      logically awake. This removes the app's mirror/input/recording paths during
+      replay. After credential input, reopen only after verified completion and
+      confirmed Off restoration. A proven zero-input abort may reopen a manual
+      mirror. Share item 05's power controller and suspend its protected-screen
+      switching during replay; a power-restoration failure cannot resubmit a password.
+- [x] Persist the attempt block before any password character can be written.
+      Partial/uncertain submission remains blocked across restarts, including
+      transport loss or unavailable success evidence. Keep observing for verified
+      manual unlock of the same device/user before clearing that uncertainty.
+      Retry only pre-input transient failures with bounded 5/10/20/30-second
+      backoff; power restoration has a separate retry path. Report coarse status
+      instead of sensitive diagnostic dumps or repeated credential attempts.
+- [x] Serialize attempts with a per-phone lease across application copies and
+      keep generation checks throughout replay. Tie automation and control to
+      the actual owned child/session. Keep **Stop session** available while the
+      mirror is temporarily closed, latch cancellation, disable enrollment changes
+      during a session, and close owned mirrors on GUI exit so privacy monitoring
+      cannot leave an unmanaged mirror behind. Do not stop unrelated processes,
+      mirrors, or the shared ADB server.
+- [x] Use one method-aware layout and backend separation for configuration,
+      enrollment, privacy, monitoring, and recovery. Detection and the enrolled
+      type remain distinct; detecting a different method never converts a saved
+      password to a PIN/pattern or authorizes biometric replay. Persistently
+      invalidate the enrolled password after an observed known method change;
+      require explicit re-enrollment even if Password is subsequently restored.
+- [ ] Complete native parity on the explicitly enrolled Pixel: locked startup,
+      already-unlocked startup, sleeping/startup preparation, active-session
+      relock, fingerprint-to-password preparation, independent panel restoration,
+      Stop/GUI exit during preparation/input, wireless reconnect/USB replug,
+      partial transport failure, persistent block, manual recovery, and cold boot.
+      Verify that the reopened mirror stays responsive and credentials never
+      appear in output, recordings, process arguments, or app-controlled capture.
+- [ ] Expand detection compatibility checks across Android builds/manufacturers,
+      multiple users/work profiles, no-secure-credential versus disabled-lock
+      states, missing/denied diagnostic services, truncation/format changes, and
+      configured-method versus current-prompt mismatches. Do not use a credential
+      verification command or attempt merely to discover the unlock method.
+- [ ] Offer explicit local helper migration only after native parity is proven.
+      The current implementation does not retrieve/import the helper's password;
+      enrollment must happen locally in masked app fields. Broader password
+      character support and additional OS protected-storage backends remain future
+      work, with unsupported combinations shown clearly.
+- [ ] Evaluate stronger device authentication if malicious device/host spoofing
+      is in scope. Serial/manufacturer/product validation prevents accidental
+      wrong-device use but is not cryptographic attestation; pinned device-held
+      keys/challenge verification may require a separate companion-app decision.
 
-Acceptance: synthetic regression fixtures cover already-unlocked, locked startup,
-mid-session relock, wrong device at the same IP, fingerprint panel, display-0
-selection, partial input, reconnect, blocked retry, manual recovery, and session
-closure. Actual device parity requires a separately scoped live test.
+Deferred methods, integrated from former item 04:
 
-Additional acceptance: use synthetic credentials to test a visible mirror,
-physical-panel-on state, failed privacy/input gating, interleaved input, changed
-device/user identity, edited/swapped records, failed decryption, and stale attempt
-state. Passwords, decryption material, and complete decrypted credential records
-must not appear in logs, recordings, exports, or process arguments. Check the
-method-aware layout with PIN/pattern/biometric/unknown fixtures and verify that a
-method change or ambiguous detection stops input and cannot choose another saved
-credential automatically.
+- [ ] Add explicit PIN enrollment/confirmation and a verified numeric entry
+      adapter only after password parity. Never reinterpret an existing password
+      as a PIN or guess a fallback method.
+- [ ] Add **Pattern** as a per-device method using a 3×3 enrollment/confirmation
+      grid, reset/remove controls, and the same bound protected storage, privacy,
+      attempt serialization, persistent uncertainty block, and manual recovery.
+      Hide the traced pattern during replay; require a verified live pattern
+      entry surface as well as the configured `PATTERN` type.
+- [ ] Prototype one continuous down/move/up gesture through selected dots using
+      scrcpy's supported control transport. Separate taps/swipes are insufficient.
+      Cover intermediate-dot rules, timing, cancellation, rotation/insets, grid
+      positions, and device-display coordinates independent of preview scale/crop.
+      Retain attribution/source/license notices for any upstream-derived transport
+      changes. Validate synthetic paths before explicitly enrolled live testing;
+      distinguish manual click-and-drag from saved automatic pattern playback.
 
-Detection acceptance: cover each reported type, no-secure-credential versus
-disabled-lock state, multiple Android users/work profiles, an absent or denied
-diagnostic service, output changes/truncation, duplicate entries, reconnects, and
-configured type versus current prompt mismatches. Verify setup while already
-unlocked performs no credential input. Test actual supported Pixel/Android and
-other manufacturer/version combinations before claiming compatibility; cold
-boot, USB replug, wireless reconnect, session closure during input, and manual
-recovery still require scoped native parity checks. Do not use a password
-verification command or a credential attempt merely to discover the method.
+Verification checkpoint: synthetic native/UI checks exercise method parsing,
+identity/user/focus/privacy changes, password-only gating, unavailable state,
+altered/missing/swapped records, generation changes, attempt ordering, blocked
+recovery, session cancellation, and stale frontend responses. The live read-only
+Pixel detection and non-credential private-editor preparation passed. The first
+preparation probe failed closed because duplicate main/numeric display-group wake
+diagnostics were rejected; restricting the query to the main power-state line
+resolved that ambiguity. The passing probe verified a stable current display-0
+password editor, pinned control, and panel Off, then restored the original
+sleep/panel state. It retrieved and entered no secret. No native live password
+success, full helper parity, or final feature acceptance is claimed.
+See [DEVELOPMENT.md](DEVELOPMENT.md) for the current evidence and limitations.
 
-Security scope: apply established OS/cryptographic protections rather than custom
-encryption. Local files can still be modified or deleted; the requirement is to
-detect and reject unauthorized changes, not claim immutability. Current-user
-protection alone cannot guarantee secrecy against code running as that user,
-an administrator, or a compromised phone/ADB environment. Public device IDs do
-not resolve that limitation. Record supported protections and limits honestly.
+Security scope: use established OS protection; files/records are not immutable.
+The safeguards do not guarantee secrecy against code running as the same Windows
+user, an administrator, or a compromised phone/ADB host. Other authorized ADB
+clients and physical touch are outside the app's exclusive input control.
+Rollback-resistant attestation is not implied by generation checks. Document
+these limits rather than treating public device IDs as secrets or proof of trust.
+Do not copy personal IDs, passwords, or private helper logs into this fork.
 
-Source starting points: `run_scrcpy` in `application/src-tauri/src/lib.rs`,
-`application/src-tauri/src/system_command.rs`, and the existing local helper's
-unlock, session, and process-lifetime code. Do not copy its personal device IDs,
-credentials, or logs into the public fork.
+Source: `automatic_unlock.rs`, `unlock_detection.rs`, `unlock_store.rs`,
+`screen_power.rs`, `screen_power_control.rs`, `lib.rs`, and
+`application/app/components/automatic_unlock.vue`.
 
-### 04. Android nine-dot pattern unlock
+### 04. Pattern unlock — merged into item 03
 
-Priority: after password integration. Feasibility: plausible; gesture transport
-and lock-screen recognition need a prototype.
-
-- [ ] Add **Pattern** as a separate per-device credential type with a 3×3
-      enrollment grid, confirmation, reset, and protected storage.
-- [ ] Fit the pattern grid into item 03's shared unlock-method design and reuse
-      its replay privacy/input guards. Hide the traced pattern during replay;
-      use item 03's configured-method detector together with an independently
-      verified pattern entry surface to distinguish it from password/PIN fields
-      and on-phone biometric prompts before any gesture is injected. A reported
-      `PATTERN` type alone must not authorize a gesture.
-- [ ] Submit one continuous touch gesture: down, movement through the selected
-      dots, then up. Separate taps or independent swipes are insufficient.
-- [ ] Validate Android's intermediate-dot rules, timing, touch cancellation,
-      rotation, display insets, and varying grid positions using synthetic paths.
-      Keep gesture coordinates in device-display space, independent of the
-      desktop preview's scale/crop.
-- [ ] Require a verified pattern entry surface. A password-editor guard cannot be
-      reused unchanged. Abort on a changed lock screen or device identity.
-- [ ] Investigate scrcpy's touch/control transport first. If this requires changes
-      to scrcpy itself, track those in a separate upstream-derived component with
-      its source and license notices, rather than claiming a GUI toggle is enough.
-- [ ] Reuse item 03's attempt serialization, persistent uncertainty block, manual
-      recovery, and session lifetime. Never automatically guess another pattern.
-
-Acceptance: validate complete gesture sequences in an isolated harness; then test
-only an explicitly enrolled device in a scoped live test. Distinguish manual
-click-and-drag support from saved automatic pattern unlock.
+Number retained for earlier references. The deferred PIN/pattern tasks, shared
+method design, privacy guards, and acceptance requirements now live under item 03.
+Only automatic detection and password replay are in the current implementation.
 
 ### 05. Temporarily turn on the phone screen for protected screens
 
@@ -341,8 +296,8 @@ biometric overlays, logical sleep, and physical panel power are separate signals
       protocol through an owned control-only server. Verify SurfaceFlinger's
       actual panel state. Automatic mode requires a local ADB server and matching
       scrcpy 5.0.1/server; other releases need validated protocol support.
-- [x] Use one session power controller for this feature; future native password
-      recovery must use the same ownership/lifecycle gate.
+- [x] Use one session power controller for this feature; native password
+      recovery now shares its ownership/lifecycle gate.
       Suspend screen-off restoration during the temporary-on state; prevent
       flicker on rapid transitions and restore only changes owned by this feature.
       Respect manual overrides, disconnects, and session closure.
@@ -384,12 +339,14 @@ cases stay responsive after retrying the screen switches.
       Report unsuccessful launches, nonzero exits, and short-command timeouts;
       bound captured stdout and avoid accumulating long mirror-session output.
       Keep diagnostics coarse rather than echoing potentially sensitive arguments.
-- [ ] Add session identifiers, actual child-process ownership, exit notifications,
+- [x] Add session identifiers, actual child-process ownership, exit notifications,
       and cancellation so authentication/power tasks cannot outlive their session.
       Avoid holding unbounded captured output for long-running sessions.
       Automatic screen sessions now have IDs, actual child-exit tracking,
       cancellable short queries, visible status, and bounded GUI-exit cleanup.
-      General session cancellation and native authentication integration remain.
+      General session ownership/cancellation and native authentication are now
+      integrated in source; GUI exit closes owned mirrors. Real-device native
+      unlock parity and interrupted-input acceptance remain under item 03.
 
 This is a prerequisite for dependable native unlock and useful ADB error status.
 
@@ -697,8 +654,9 @@ the relevant steps below and repeat affected checks as features are added.
    Include multiple-server tests (12) and investigate recurring discovery loss (13).
 2. Independent ADB update staging, activation, rollback, and override preservation
    (02, 07).
-3. Native password parity with the existing helper (03).
-4. Pattern input prototype and protected-screen detection investigation (04, 05).
+3. Native automatic detection and password parity with the existing helper (03).
+4. After password acceptance, deferred PIN/pattern adapters within item 03;
+   continue protected-screen compatibility investigation under item 05.
 
 Use synthetic credentials and isolated ADB endpoints for automated checks. Keep
 device-specific testing explicit. Before changing code, recheck official stable

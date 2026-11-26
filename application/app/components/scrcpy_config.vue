@@ -17,6 +17,8 @@
                     v-model="automatic_screen" :enabled="screen_control_allowed" />
             </template>
 
+            <automatic_unlock :device="device" :selection="selection" :adb_available="adb_available" />
+
             <div class="collapse collapse-arrow bg-base-300">
                 <input type="checkbox" />
                 <div class="collapse-title text-white">{{ $t('display_settings') }}</div>

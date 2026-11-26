@@ -57,12 +57,98 @@ request replaces that behavior with automatic recovery and original-style
 buttons. The owner subsequently confirmed the Pixel appears in preview v3 after
 wireless discovery was recovered. Source and headless checks cover the controls;
 the full native/device acceptance checklist remains open, and the installed app
-is unchanged. Automatic ADB updates,
-native password/pattern unlock, friendly device
-labels, and physical-device grouping remain backlog work. Full child-process
-cancellation on app exit also remains open under item 06.
+is unchanged. That initial preview left automatic ADB updates, native unlock,
+device labels/grouping, and full child-process cancellation as backlog work.
+Later checkpoints below record the implemented additions and their distinct
+source, simulated, and live verification limits.
 
-## Verification
+## Native automatic unlock checkpoint — November 25, 2026
+
+The owner narrowed the current implementation to automatic method detection and
+password unlock only. Former backlog item 04 is now integrated into item 03:
+PIN and nine-dot pattern playback remain deferred within the shared method model.
+The native feature is implemented in source; live password acceptance is pending.
+The installed app and the existing helper are unchanged. The preview neither
+reads nor migrates that helper's saved password; enrollment is local and explicit.
+
+`automatic_unlock.rs` coordinates native commands, guarded replay, recovery, and
+session lifetime. `unlock_detection.rs` reads bounded, filtered state through the
+selected verified ADB transport. It distinguishes configured PIN/password/pattern/
+none/unknown from the current main-display SystemUI entry surface; missing or
+ambiguous state never permits input. Password replay currently requires Windows,
+Android 15+ owner user 0, a local ADB server, and direct scrcpy 5.0.1 with its
+matching server. The ordinary manual mirror remains available without enrollment.
+
+`unlock_store.rs` uses Windows Credential Manager with separate OS-protected
+metadata/attempt and secret records. Both bind identity, Android user, schema,
+password method, and random enrollment generation. A generation change disables
+the previous enrollment before replacing its secret; malformed/swapped/missing
+records and interrupted writes fail closed. A per-phone lease serializes replay
+and enrollment changes across application copies. Already-unlocked monitoring
+reads metadata only, without retrieving the password. Native secret buffers are
+zeroized on release; ordinary settings, exported profiles, diagnostics, shell
+arguments, and the clipboard do not carry the password.
+
+Replay closes and waits for this session's mirror before retrieving any secret.
+The remaining scrcpy channel has video/audio/clipboard synchronization disabled
+and sends native text/control messages. Android stays logically awake while its
+physical panel is confirmed Off. Display-0 focus, current SystemUI password editor,
+boot/owner/SIM/occlusion state, configured method, identity, and privacy are checked
+before input, throughout typing, and before Enter. The attempt block is persisted
+before the first character can be sent. Unknown/partial transport or verification
+outcomes preserve that block across restarts until verified manual unlock.
+Pre-input errors use bounded backoff; power restoration retries independently.
+After credential input, the mirror reopens only after verified unlock and confirmed
+physical Off restoration. A proven pre-input failure may reopen a manual mirror
+without retrieving or entering the password.
+Recording/capture sinks, wrappers, and unsupported flags or displays are rejected
+for automatic unlock. Item 05's power monitor shares the controller and yields
+during replay, rather than competing with password privacy.
+
+The method-aware UI provides masked confirmation/enrollment, replace/remove,
+explicit per-device enablement, status/recovery feedback, and a latched
+**Stop session** action while the mirror is temporarily closed. Active sessions
+disable credential edits. Password support is 4–64 printable ASCII characters;
+PIN/pattern/unknown detections cannot silently select another credential. A known
+method change persistently disables the old enrollment; only explicit password
+re-enrollment can restore it, even if the configured method returns to Password.
+The session owner now closes owned mirrors on GUI exit, preventing an unmanaged
+mirror from surviving the privacy monitor. It does not terminate unrelated
+mirrors/processes or stop the shared ADB server.
+
+Verification at this checkpoint:
+
+- The native suite has 106 passing tests and 14 opt-in tests excluded.
+  Synthetic checks cover storage/generation/attempt invariants, method parsing,
+  identity/focus/privacy guards, replay ordering, cancellation, and safe recovery.
+- The frontend generated successfully. All 87 UI tests passed, including 17
+  unlock tests. Old positional Display Settings selectors were repaired to
+  accommodate the additional section. The narrow synthetic preview was
+  inspected without accessing the owner's desktop; test browsers and listener
+  were closed. These mocked results do not prove device-side unlock success.
+- The connected Pixel's read-only native detector reported `PASSWORD`, SDK 37,
+  Android user 0, safely locked, and logically asleep. No secret was retrieved
+  or entered, and no credential verification command was used for detection.
+- The non-credential private-editor preparation probe passed after the main
+  power-state query was corrected to exclude duplicated numeric display-group
+  wake diagnostics. The earlier ambiguity failed closed. The passing probe
+  verified the stable current display-0 password editor, physical panel Off,
+  and pinned control channel, then restored the original sleep/panel state.
+  No secret was retrieved or entered in either probe. No native live password
+  success or complete parity with the existing helper is claimed. Startup/relock,
+  cold boot/reconnect, privacy transitions, interrupted input/manual recovery,
+  and reopened-mirror responsiveness still need scoped real-device acceptance
+  after local enrollment.
+
+Security limits: OS protection is not immutable storage or rollback attestation.
+The app cannot exclude other authorized ADB clients, physical touch, code running
+as the same Windows user, administrators, or a compromised/spoofed device/host.
+Serial/manufacturer/product checks prevent accidental wrong-device use but do
+not provide cryptographic device attestation. No custom encryption or biometric
+bypass is introduced. Additional platforms, character sets, explicit helper
+migration, and stronger device authentication remain future work in backlog 03.
+
+## Verification before native unlock
 
 From `application`, with the selected Node and Rust tools available:
 
@@ -289,10 +375,10 @@ transport; verified identities are re-read before acting. Custom device-selector
 overrides are rejected rather than selecting another phone. Supported attached
 short-option values and non-selector clusters remain available for existing
 configurations. Very long disambiguators use a short connection fallback.
-These startup checks do not replace the per-input checks required by future
-native credential handling. Remember SCRCPY config is still global, and the
-existing password helper is unchanged; native per-device settings/credentials
-will bind to the verified identity under backlog item 03.
+These startup checks alone do not authorize credential input; the later native
+unlock checkpoint adds independent per-input guards. Remember SCRCPY config is
+still global. Native per-device enrollment binds the verified identity in Windows
+Credential Manager, while the existing password helper remains unchanged.
 
 Read-only live inventory and selection checks passed on two connected devices.
 A controlled extra IP connection alongside the phone's existing mDNS path then
@@ -371,12 +457,12 @@ Raw window dumps, app names, and hardware identity stay out of frontend status
 and logs; only the already selected transport identifies its session in the GUI.
 
 Closing a mirror ends its monitor and lets normal scrcpy cleanup restore the
-device, including its power-off-on-close setting. Closing the GUI stops monitors
-with a bounded wait; an owned temporary On can be restored to the Off baseline
-after identity/awake/state checks. Existing mirror windows can remain open as
-before, but automatic switching ends with the GUI. No blanket server shutdown or
-termination of unrelated processes is performed. Native password monitoring must
-reuse this lifecycle/ownership model when item 03 is implemented.
+device, including its power-off-on-close setting. The native-unlock revision now
+stops monitors and closes owned mirrors on GUI exit with bounded cleanup; it no
+longer leaves a mirror running after its privacy monitor ends. An owned temporary
+On can be restored to the Off baseline after identity/awake/state checks. No
+blanket server shutdown or termination of unrelated processes is performed.
+Native password monitoring shares this lifecycle/ownership model with item 05.
 
 The manual **Check protected screen** action is a read-only snapshot using the
 same visible main-display secure-window and SystemUI biometric detector as

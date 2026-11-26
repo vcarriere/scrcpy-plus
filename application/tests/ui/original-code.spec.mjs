@@ -80,7 +80,7 @@ for (const deferred of [false, true]) {
 test("legacy rotation settings migrate to the supported scrcpy orientation argument", async ({ page }) => {
     await mock(page, { devices: "synthetic-device\tdevice\n", remember_config: true, saved_config: { active_args: ["--lock-video-orientation"] } });
     await page.goto("/");
-    await page.locator(".collapse").first().locator('input[type="checkbox"]').first().check();
+    await page.locator(".collapse").filter({ has: page.getByText("Display Settings", { exact: true }) }).locator('input[type="checkbox"]').first().check();
     await expect(page.getByRole("checkbox", { name: /^Lock screen rotation/ })).toBeChecked();
     await page.getByRole("button", { name: "Start SCRCPY", exact: true }).click();
     await expect(page.getByRole("alert")).toHaveText("Simulated launch failure");
@@ -94,12 +94,12 @@ test("turning off Remember configuration resets bitrate as well as other launch 
     await page.goto("/settings");
     await page.getByRole("checkbox", { name: "Remember SCRCPY config", exact: true }).uncheck();
     await page.locator('a[href="/"]').click();
-    await page.locator(".collapse").first().locator('input[type="checkbox"]').first().check();
+    await page.locator(".collapse").filter({ has: page.getByText("Display Settings", { exact: true }) }).locator('input[type="checkbox"]').first().check();
     await page.getByRole("slider").evaluate(input => { input.value = "16"; input.dispatchEvent(new Event("input", { bubbles: true })); });
     await expect(page.getByRole("slider")).toHaveValue("16");
     await page.getByRole("link", { name: "Settings", exact: true }).click();
     await page.locator('a[href="/"]').click();
-    await page.locator(".collapse").first().locator('input[type="checkbox"]').first().check();
+    await page.locator(".collapse").filter({ has: page.getByText("Display Settings", { exact: true }) }).locator('input[type="checkbox"]').first().check();
     await expect(page.getByRole("slider")).toHaveValue("8");
 });
 

@@ -7,6 +7,9 @@ mod protected_screen;
 mod screen_power;
 mod screen_power_control;
 mod device_inventory;
+mod automatic_unlock;
+mod unlock_detection;
+mod unlock_store;
 use tauri::Manager;
 use system_command::{ scrcpy, adb };
 
@@ -101,8 +104,8 @@ async fn run_scrcpy(args: Vec<String>, automatic_screen: Option<bool>, selection
   // Runs on a dedicated blocking thread and resolves once the scrcpy window is closed
   tauri::async_runtime::spawn_blocking(move || {
     let args_ref: Vec<&str> = args.iter().map(|a| a.as_str()).collect();
-    if let Some(selection) = selection { device_inventory::validate(&selection, &args_ref)?; }
-    system_command::run_scrcpy(args_ref, automatic_screen.unwrap_or(false)).map(|_| ())
+    if let Some(selection) = &selection { device_inventory::validate(selection, &args_ref)?; }
+    system_command::run_scrcpy(args_ref, automatic_screen.unwrap_or(false), selection.as_ref()).map(|_| ())
   })
   .await
   .map_err(|e| e.to_string())?
@@ -125,9 +128,34 @@ fn adb_status() -> Value {
     "endpoint": endpoint.unwrap_or_default(), "path": system_command::adb_path(),
     "protocol_version": observed.as_ref().ok().and_then(|v| *v),
     "server_details": server_details,
-    "screen_sessions": screen_power::statuses(),
+    "screen_sessions": screen_power::statuses().into_iter().filter(|session| session.automatic_screen).collect::<Vec<_>>(),
     "error": observed.err()
   })
+}
+
+#[tauri::command]
+async fn inspect_unlock(selection: device_inventory::Selection) -> Result<automatic_unlock::Observation, String> {
+  tauri::async_runtime::spawn_blocking(move || automatic_unlock::inspect(&selection)).await.map_err(|_| "Unlock check could not finish.".to_string())?
+}
+
+#[tauri::command]
+async fn enroll_unlock(selection: device_inventory::Selection, password: String, confirmation: String) -> Result<automatic_unlock::Observation, String> {
+  tauri::async_runtime::spawn_blocking(move || automatic_unlock::enroll(&selection, password, confirmation)).await.map_err(|_| "Password enrollment could not finish.".to_string())?
+}
+
+#[tauri::command]
+async fn set_unlock_enabled(selection: device_inventory::Selection, enabled: bool) -> Result<automatic_unlock::Observation, String> {
+  tauri::async_runtime::spawn_blocking(move || automatic_unlock::set_enabled(&selection, enabled)).await.map_err(|_| "Unlock settings could not be saved.".to_string())?
+}
+
+#[tauri::command]
+async fn remove_unlock(selection: device_inventory::Selection) -> Result<automatic_unlock::Observation, String> {
+  tauri::async_runtime::spawn_blocking(move || automatic_unlock::remove(&selection)).await.map_err(|_| "Password removal could not finish.".to_string())?
+}
+
+#[tauri::command]
+fn stop_unlock_session(selection: device_inventory::Selection) -> Result<automatic_unlock::Observation, String> {
+  automatic_unlock::stop(&selection)
 }
 
 #[tauri::command]
@@ -213,7 +241,7 @@ pub fn run() {
     })
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
-    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, get_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen, control_screen_power, get_device_inventory, disconnect_device_route])
+    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, get_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen, control_screen_power, get_device_inventory, disconnect_device_route, inspect_unlock, enroll_unlock, set_unlock_enabled, remove_unlock, stop_unlock_session])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|app, event| {

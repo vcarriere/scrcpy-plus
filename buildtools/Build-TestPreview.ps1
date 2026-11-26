@@ -96,8 +96,9 @@ and password helper are not replaced or imported.
 9. Screen switching has separate Pause/Resume controls during its session. Manual
    power changes or phone sleep pause it; Resume explicitly returns control to
    the automatic feature. Closing the mirror ends its monitor. Closing the GUI
-   ends automation even if the mirror remains open. Unsupported capabilities or
-   unreadable state are reported rather than guessed.
+   now ends automation and closes this app's owned mirrors, so a mirror cannot
+   outlive its privacy monitor. Other apps' mirrors and the shared ADB server
+   are not stopped. Unsupported/unreadable state is reported rather than guessed.
 10. "Check protected screen" is a read-only snapshot using the same visible
     window/fingerprint detector as automatic switching. It shows progress and
     a checked time. Keep the intended app open on the selected device while
@@ -134,6 +135,38 @@ and password helper are not replaced or imported.
     blocks overlapping commands. Wireless setup validates inputs and ignores
     replies/timers after leaving the page. Saved rotation flags migrate to the
     current scrcpy option. See BUG_REVIEW.md in the source for evidence and limits.
+16. Native automatic unlock: select the verified phone and expand "Automatic
+    unlock". "Check unlock method" is read-only. Detection distinguishes password,
+    PIN, pattern, no secure credential, and unknown; only password playback is
+    currently implemented. Password unlock needs Windows, Android 15+ owner user 0,
+    a local ADB server, and direct scrcpy 5.0.1 with its matching server. In Advanced
+    settings use this preview's bundled/default scrcpy, not the existing password
+    wrapper. A PIN/pattern/unknown result must not offer password fallback.
+17. Enroll locally in the two masked password fields; do not send a password in
+    chat or copy an existing helper credential file. Save does not enable replay.
+    After saving, explicitly enable "Automatically unlock this device" and check
+    "Turn off phone screen" before Start. Use 4-64 printable ASCII characters.
+    Disable recording/capture and custom flags. The password is protected in
+    Windows Credential Manager, separate from ordinary SCRCPY settings. It is
+    bound to this device/user and persists until replaced or removed. The preview
+    does not automatically retrieve/import the existing helper's password.
+18. While enabled, startup and relocks during this app's owned session may unlock
+    automatically, including deliberate locks. For private entry the phone panel
+    is verified Off and the mirror closes; it reopens only after verified unlock
+    and Off restoration. Recording, clipboard synchronization, and mirror input
+    cannot run through this app during replay. Other ADB clients/physical touch
+    are outside its exclusive control. Keep the GUI open; "Stop session" remains
+    available during private entry, and enrollment edits are disabled until stop.
+    An uncertain/partial attempt blocks further automatic input across restarts.
+    Unlock manually once on the same phone/user to recover; do not keep retrying
+    a password. Removing the saved password disables enrollment for that device.
+19. Native password replay is new source work: read-only Pixel detection,
+    non-credential private-editor preparation, and synthetic guards passed.
+    The preparation probe read/entered no secret and restored the original phone
+    sleep/panel state. Live password parity is still pending; no live native
+    password success is claimed by this build. Check mirror responsiveness in a
+    scoped test after local enrollment. Fingerprint/face prompts remain on-phone;
+    PIN/pattern replay and broader compatibility are deferred under backlog 03.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI
@@ -141,9 +174,10 @@ restart or manual Resume action is needed. The status check does not start or
 replace the ADB server itself.
 
 This build tests the ADB controls, known-address discovery recovery, compact
-device labels, grouped connection paths, and automatic protected-screen /
-fingerprint-prompt screen power. Built-in password/pattern unlock and automatic
-updates are not implemented yet.
+device labels, grouped connection paths, automatic protected-screen /
+fingerprint-prompt screen power, and the new password-only native unlock source.
+Automatic detection is implemented; real-device password acceptance remains
+pending. PIN/pattern replay and automatic updates remain on the backlog.
 The separate profile starts with default settings and does not automatically use
 the existing password wrapper. Close the test app when finished; your installed
 app is unchanged and can be opened normally.
