@@ -36,6 +36,7 @@ try {
     $exit_code = $LASTEXITCODE
     $messages | ForEach-Object { Write-Output $_ }
     $timing_line = $messages | ForEach-Object { [string]$_ } | Where-Object { $_.StartsWith('Native unlock benchmark:') } | Select-Object -First 1
+    $cleanup_line = $messages | ForEach-Object { [string]$_ } | Where-Object { $_.StartsWith('Native unlock benchmark cleanup:') } | Select-Object -First 1
     if ($RunUnlock -and $timing_line) {
         $result = [ordered]@{
             source_commit = (& git -C $project_root rev-parse HEAD).Trim()
@@ -45,7 +46,8 @@ try {
             success = $exit_code -eq 0
             credential_output = $false
             recording = $false
-            phone_sleep_restored = $exit_code -eq 0
+            phone_sleep_restored = if ($cleanup_line) { $cleanup_line -match 'sleep_restored=true' } else { $null }
+            attempt_blocked = if ($cleanup_line) { $cleanup_line -match 'attempt_blocked=true' } else { $null }
         }
         foreach ($name in @('password_entry_started_ms', 'submit_started_ms', 'verified_unlocked_ms', 'headless_video_ready_ms')) {
             $match = [regex]::Match($timing_line, [regex]::Escape($name) + '=Some\((\d+)\)')

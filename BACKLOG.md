@@ -247,6 +247,16 @@ a fingerprint prompt, and an app's authentication prompt is not device unlock.
       less complete startup time). Entry/guard time fell from 3.699 s to 0.605 s.
       Independent selected-backend failure never falls back during replay;
       test helpers/JARs were cleaned up and the phone returned to sleep.
+- [x] Further reduce native startup without weakening the state checks. Parallel
+      private-channel setup, three-property action verification, observed panel
+      settling, guarded native wake/tap, and compact exact Power diagnostics
+      produced two complete Pixel runs at **4.790/5.337 s** to headless video
+      and **3.836/4.223 s** to verified unlock, versus 7.108/5.895 s in v23.
+      Keep explicit bouncer preparation; never infer visibility from retained
+      editor metadata. Current global display focus and rotation constrain the
+      native tap. Power remains in its original query position and validates the
+      same wakefulness scalar, with fresh text confirmation only for a valid
+      omitted default enum. All per-character guards and failure blocking remain.
 - [ ] Broaden end-to-end timing/recovery coverage and compare the complete old
       helper workflow. Preparation was the larger delay in the measured run.
       Diagnostic component timings do not prove all native parity. Keep further optimization

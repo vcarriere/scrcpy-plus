@@ -1,0 +1,2 @@
+# Keep recorded Java source hashes stable across Windows checkouts.
+*.java text eol=lf

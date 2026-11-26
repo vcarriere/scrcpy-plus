@@ -32,10 +32,32 @@ public final class MainTest {
                 + "    interactiveState=INTERACTIVE_STATE_AWAKE\n    unrelated=private\n    Looper state: secret\n    showing=false\n",
                 "  KeyguardServiceDelegate\n    showing=true\n    inputRestricted=true\n    userId=0\n    simSecure=false\n"
                 + "    occluded=false\n    bootCompleted=true\n    interactiveState=INTERACTIVE_STATE_AWAKE\n");
-        matches(new Main.DisplaysFilter(), "    Display: mDisplayId=1\n      mCurrentFocus=Window{other}\nprivate\n"
-                + "Display: mDisplayId=0\n  mCurrentFocus=Window{keyguard u0 NotificationShade}\n",
-                "    Display: mDisplayId=1\n      mCurrentFocus=Window{other}\nDisplay: mDisplayId=0\n"
-                + "  mCurrentFocus=Window{keyguard u0 NotificationShade}\n");
+        matches(new Main.DisplaysFilter(), "    Display: mDisplayId=1\n      mCurrentFocus=Window{other}\n"
+                + "    mRotation=2 mDeferredRotationPauseCount=0\nprivate\n"
+                + "Display: mDisplayId=0\n  mCurrentFocus=Window{keyguard u0 NotificationShade}\n"
+                + "    mRotation=0 mDeferredRotationPauseCount=0\n",
+                "    Display: mDisplayId=1\n      mCurrentFocus=Window{other}\n    mRotation=2 mDeferredRotationPauseCount=0\n"
+                + "Display: mDisplayId=0\n  mCurrentFocus=Window{keyguard u0 NotificationShade}\n"
+                + "    mRotation=0 mDeferredRotationPauseCount=0\n");
+        matches(new Main.DisplaysFilter(), "Display: mDisplayId=0\n    mRotation=0 mDeferredRotationPauseCount=0\n"
+                + "    mRotation=0 mDeferredRotationPauseCount=0\n    mRotation=unknown\n",
+                "Display: mDisplayId=0\n    mRotation=0 mDeferredRotationPauseCount=0\n"
+                + "    mRotation=0 mDeferredRotationPauseCount=0\n    mRotation=unknown\n");
+        matches(new Main.DisplaysFilter(), "    DisplayRotation\n    mCurrentAppOrientation=SCREEN_ORIENTATION_UNSPECIFIED\n"
+                + "    mRotationHistory=private\n    RotationHistory:\n      12:00:00 ROTATION_90 to ROTATION_0\n"
+                + "        source=private\n        mode=USER_ROTATION_FREE user=ROTATION_0\n"
+                + "    rotation=ROTATION_0\n    metadata mRotation=0\n", "");
+        matches(new Main.FocusDisplayFilter(), "Input Dispatcher State:\n  FocusedDisplayId: 0\n"
+                + "    FocusedDisplayId: 12\n  private=secret\n", "0\n");
+        matches(new Main.FocusDisplayFilter(), "Input Dispatcher State:\n  FocusedDisplayId: 0\n"
+                + "Input Dispatcher State at time of last ANR:\n  FocusedDisplayId: 12\n", "0\n");
+        matches(new Main.FocusDisplayFilter(), "  FocusedDisplayId: 0\n"
+                + "Input Dispatcher State at time of last ANR:\n  FocusedDisplayId: 12\n", "");
+        matches(new Main.FocusDisplayFilter(), "Input Dispatcher State:\n  FocusedDisplayId: 0\n"
+                + "  FocusedDisplayId: 12\n", "0\n12\n");
+        rejectsFilter(bytes("Input Dispatcher State:\n  FocusedDisplayId: -1\n"), new Main.FocusDisplayFilter());
+        rejectsFilter(bytes("Input Dispatcher State:\n  FocusedDisplayId: 0\n  FocusedDisplayId: 0 trailing\n"), new Main.FocusDisplayFilter());
+        rejectsFilter(bytes("Input Dispatcher State:\n  FocusedDisplayId: 0\nInput Dispatcher State:\n"), new Main.FocusDisplayFilter());
         matches(new Main.ImeFilter(), "  mCurrentImeUserId=0\n  cachedEditorInfo:\n        inputType=secret\n"
                 + "  mUserDataRepository:\n    userId=0\n      curClient=ClientState{test mSelfReportedDisplayId=0}\n"
                 + "      curEditorInfo:\n        inputType=0x81 imeOptions=0x12000006\n        packageName=com.android.systemui autofillId=null\n"

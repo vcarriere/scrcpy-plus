@@ -12,7 +12,7 @@ const METHOD_QUERY: &str = r#"dumpsys lock_settings | awk '
 // Keep only current state fields. In particular, never return input history,
 // cached editors, surrounding text, or the complete lock-settings dump.
 // Fixed framing labels contain no options or escapes. The shell's builtin echo
-// avoids starting ten external formatter processes for every snapshot.
+// avoids starting external formatter processes for every snapshot.
 const SNAPSHOT_QUERY: &str = r#"
 echo '@@identity'
 getprop ro.serialno
@@ -29,7 +29,13 @@ dumpsys window policy | awk '
     active && /^[[:space:]]*(showing|inputRestricted|userId|simSecure|occluded|bootCompleted|interactiveState)=/ { print }
 '
 echo '@@displays'
-dumpsys window displays | grep -E 'Display: mDisplayId=|mCurrentFocus='
+dumpsys window displays | grep -E 'Display: mDisplayId=|mCurrentFocus=|^[[:space:]]*mRotation='
+echo '@@focus_display'
+dumpsys input | awk '
+    /^Input Dispatcher State:$/ { if (++sections > 1) { print "invalid"; active=0; next }; active=1; next }
+    active && /^[^[:space:]]/ { active=0 }
+    active && /^  FocusedDisplayId:/ { if ($0 ~ /^  FocusedDisplayId: [0-9]+$/) { sub(/^  FocusedDisplayId: /, ""); print } else { print "invalid" } }
+'
 echo '@@ime'
 dumpsys input_method | sed -n -e '/^  mCurrentImeUserId=/p' -e '/^  mUserDataRepository:$/,/^  [^ ]/p' | awk '
     /^  mCurrentImeUserId=/ || /^  mUserDataRepository:$/ || /^    userId=/ || /^      curClient=/ || /^      curEditorInfo:$/ || /^        inputType=/ || /^        packageName=/ { print; next }
@@ -71,6 +77,8 @@ pub struct Snapshot {
     pub unlocked: bool,
     pub safe_locked: bool,
     pub awake: bool,
+    pub main_display_focused: bool,
+    pub rotation: Option<u32>,
     pub password_editor: bool,
     pub focus: Option<String>,
     pub alternate: bool,
@@ -134,7 +142,7 @@ pub fn configured(target: &Target, cancelled: &mut impl FnMut() -> bool) -> Resu
 }
 
 fn sections(output: &str) -> Option<HashMap<&str, String>> {
-    let expected = ["identity", "boot", "policy", "displays", "ime", "method", "power", "panel", "identity_end", "end"];
+    let expected = ["identity", "boot", "policy", "displays", "focus_display", "ime", "method", "power", "panel", "identity_end", "end"];
     let mut values = HashMap::new();
     let mut current = None;
     let mut next = 0;
@@ -183,6 +191,23 @@ fn main_focus(output: &str, user: u32) -> Option<String> {
     let focus = focus.pop()?;
     if !focus.starts_with("mCurrentFocus=Window{") || !focus.split_whitespace().any(|field| field == format!("u{}", user)) { return None; }
     Some(focus)
+}
+
+fn main_rotation(output: &str) -> Option<u32> {
+    let mut current = false;
+    let mut displays = 0;
+    let mut rotations = Vec::new();
+    for line in output.lines() {
+        if let Some((_, value)) = line.split_once("Display: mDisplayId=") {
+            current = value.chars().take_while(char::is_ascii_digit).eq("0".chars());
+            if current { displays += 1; }
+        } else if current {
+            if let Some(value) = line.trim().strip_prefix("mRotation=") {
+                rotations.push(value.split_whitespace().next()?.parse::<u32>().ok()?);
+            }
+        }
+    }
+    (displays == 1 && rotations.len() == 1).then(|| rotations[0]).filter(|rotation| *rotation <= 3)
 }
 
 fn current_password_editor(output: &str, user: u32) -> bool {
@@ -248,10 +273,11 @@ fn parse_snapshot(target: &Target, output: &str) -> Result<Snapshot, String> {
     let alternate = focus.as_ref().is_some_and(|focus| focus.contains("AlternateBouncer"));
     let password_focus = focus.as_ref().is_some_and(|focus| !alternate && ["NotificationShade", "Keyguard", "Bouncer"].iter().any(|name| focus.contains(name)));
     let method = method(&sections["method"], target.binding.user).to_string();
+    let main_display_focused = sections["focus_display"].lines().count() == 1 && sections["focus_display"].trim() == "0";
     let safe_locked = ready && target.binding.user == 0 && value("showing", "true") && value("inputRestricted", "true");
     let unlocked = ready && awake && value("showing", "false") && value("inputRestricted", "false");
-    let password_editor = safe_locked && awake && password_focus && method == "password" && current_password_editor(&sections["ime"], target.binding.user);
-    Ok(Snapshot { method, unlocked, safe_locked, awake, password_editor, focus, alternate, panel: screen_power::panel(&sections["panel"]) })
+    let password_editor = safe_locked && awake && main_display_focused && password_focus && method == "password" && current_password_editor(&sections["ime"], target.binding.user);
+    Ok(Snapshot { method, unlocked, safe_locked, awake, main_display_focused, rotation: main_rotation(&sections["displays"]), password_editor, focus, alternate, panel: screen_power::panel(&sections["panel"]) })
 }
 
 pub fn snapshot(target: &Target, cancelled: &mut impl FnMut() -> bool) -> Result<Snapshot, String> {
@@ -277,10 +303,7 @@ pub fn start_diagnostics(target: &mut Target, cancelled: &mut impl FnMut() -> bo
 mod tests {
     use super::*;
 
-    #[test]
-    #[ignore = "Read-only Pixel diagnostic benchmark; requires explicitly selected existing ADB server and transport, never reads credentials or sends input"]
-    fn live_snapshot_timing_without_input() {
-        use std::time::Instant;
+    fn read_only_target() -> Target {
         let path = std::env::var("SCRCPY_PLUS_TEST_ADB").expect("Select the existing ADB executable explicitly.");
         let transport = std::env::var("SCRCPY_PLUS_TEST_TRANSPORT").expect("Select the connected Pixel transport explicitly.");
         let socket = "tcp:localhost:5037".to_string();
@@ -288,12 +311,19 @@ mod tests {
         let client = AdbClient { path: path.clone(), socket: socket.clone() };
         let output = client.query(&["-t", &transport, "shell", IDENTITY_QUERY], &mut || false, false).unwrap();
         let (id, hardware_serial, user, sdk) = identity(&output).expect("The selected transport must return a valid identity.");
-        let mut target = Target {
+        Target {
             selection: Selection { serial: "read-only-benchmark".into(), transport_id: Some(transport.parse().unwrap()), identity: Some(id.clone()), adb_path: path, server_socket: socket },
             client, binding: Binding { identity: id, user }, hardware_serial, sdk, diagnostics: None,
-        };
+        }
+    }
+
+    #[test]
+    #[ignore = "Read-only Pixel diagnostic benchmark; requires explicitly selected existing ADB server and transport, never reads credentials or sends input"]
+    fn live_snapshot_timing_without_input() {
+        use std::time::Instant;
+        let mut target = read_only_target();
         let mut external_query = SNAPSHOT_QUERY.to_string();
-        for name in ["identity", "boot", "policy", "displays", "ime", "method", "power", "panel", "identity_end", "end"] {
+        for name in ["identity", "boot", "policy", "displays", "focus_display", "ime", "method", "power", "panel", "identity_end", "end"] {
             let marker = format!("echo '@@{}'", name);
             assert_eq!(external_query.matches(&marker).count(), 1, "Each benchmark marker must be present exactly once.");
             external_query = external_query.replace(&marker, &format!("printf '@@{}\\n'", name));
@@ -330,6 +360,100 @@ mod tests {
         println!("Validated persistent diagnostic comparison: helper_startup_ms={}, helper_ms={:?}, helper_median_ms={}, legacy_ms={:?}, legacy_median_ms={}, credential_access=false, input_sent=false", startup, helper, helper_sorted[2], legacy, legacy_sorted[2]);
     }
 
+    fn run_read_only_profile(entry: &str, verify: impl FnOnce(&Target, &str)) {
+        use sha2::{ Digest, Sha256 };
+        use std::io::Read;
+        #[cfg(windows)]
+        use std::os::windows::fs::OpenOptionsExt;
+        let target = read_only_target();
+        let path = std::env::var("SCRCPY_PLUS_TEST_PROFILE_JAR").unwrap();
+        let expected_hash = std::env::var("SCRCPY_PLUS_TEST_PROFILE_SHA256").unwrap();
+        let mut options = std::fs::OpenOptions::new(); options.read(true);
+        #[cfg(windows)]
+        options.share_mode(1);
+        let mut file = options.open(&path).unwrap();
+        let mut bytes = Vec::new(); (&mut file).take(262145).read_to_end(&mut bytes).unwrap();
+        assert!(!bytes.is_empty() && bytes.len() < 262144);
+        let actual_hash: String = Sha256::digest(&bytes).iter().map(|byte| format!("{:02x}", byte)).collect();
+        assert_eq!(actual_hash, expected_hash);
+        struct RemoteFile<'a> { target: &'a Target, path: String }
+        impl Drop for RemoteFile<'_> {
+            fn drop(&mut self) {
+                if !adb_server::version(&self.target.client.socket).is_ok_and(|version| version.is_some()) { return; }
+                if query(self.target, IDENTITY_QUERY, &mut || false).ok().and_then(|output| identity(&output)).is_some_and(|(id, _, user, sdk)| id == self.target.binding.identity && user == self.target.binding.user && sdk == self.target.sdk) {
+                    let _ = query(self.target, &format!("rm -f {}", self.path), &mut || false);
+                }
+            }
+        }
+        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+        let remote = RemoteFile { target: &target, path: format!("/data/local/tmp/scrcpy-plus-unlock-profile-{}-{}.jar", std::process::id(), nonce) };
+        let transport = target.selection.transport_id.unwrap().to_string();
+        target.client.query(&["-t", &transport, "push", &path, &remote.path], &mut || false, false).unwrap();
+        let hash = query(&target, &format!("sha256sum {}", remote.path), &mut || false).unwrap();
+        assert!(hash.split_whitespace().eq([actual_hash.as_str(), remote.path.as_str()]));
+        assert!(!entry.is_empty() && entry.chars().all(|character| character.is_ascii_alphanumeric() || character == '.'));
+        let output = query(&target, &format!("CLASSPATH={} app_process / {}", remote.path, entry), &mut || false).unwrap().replace("\r\n", "\n");
+        verify(&target, &output);
+    }
+
+    fn profile_frames<'a>(target: &Target, output: &'a str) -> &'a str {
+        let output = output.strip_prefix("PROFILE_BEFORE\n").expect("The profiler must return a framed native snapshot.");
+        let (before, rest) = output.split_once("PROFILE_TIMINGS\n").unwrap();
+        let (timings, after) = rest.split_once("PROFILE_AFTER\n").unwrap();
+        for snapshot in [before, after] {
+            let state = parse_snapshot(target, snapshot).expect("Both profiling snapshots must pass the complete native parser.");
+            assert!(state.method == "password" && state.panel.is_some() && (state.safe_locked || state.unlocked));
+        }
+        timings
+    }
+
+    #[test]
+    #[ignore = "Read-only phone-side diagnostic profiling with an explicitly hash-pinned test JAR; no credential retrieval, input, or power change"]
+    fn live_guard_profile_without_input() {
+        run_read_only_profile("com.scrcpyplus.unlockguard.MainProfile", |target, output| {
+            let timings = profile_frames(target, output);
+            let labels = ["policy", "displays", "focus_display", "input_method", "lock_settings", "power", "SurfaceFlinger"];
+            let mut rows: HashMap<&str, Vec<u64>> = labels.iter().map(|label| (*label, Vec::new())).collect();
+            for (index, line) in timings.lines().enumerate() {
+                let (label, micros) = line.split_once('=').unwrap();
+                assert_eq!(label, labels[index % labels.len()]);
+                let micros = micros.parse::<u64>().unwrap();
+                assert!(micros <= 2500000);
+                rows.get_mut(label).unwrap().push(micros);
+            }
+            assert!(rows.values().all(|values| (3..=5).contains(&values.len()) && values.len() == rows["policy"].len()));
+            for label in labels {
+                let values = &rows[label];
+                let mut sorted = values.clone(); sorted.sort();
+                println!("Phone-side diagnostic profile: service={}, micros={:?}, median_micros={}, credential_access=false, input_sent=false", label, values, sorted[sorted.len() / 2]);
+            }
+        });
+    }
+
+    #[test]
+    #[ignore = "Read-only exact power-state text/proto comparison with a hash-pinned profiler; no credential retrieval, input, or power change"]
+    fn live_power_profile_without_input() {
+        run_read_only_profile("com.scrcpyplus.unlockguard.MainPowerProfile", |target, output| {
+            let lines: Vec<_> = profile_frames(target, output).lines().collect();
+            assert!(lines.len() % 4 == 0 && (3..=5).contains(&(lines.len() / 4)));
+            let labels = ["power_text", "power_text_wakefulness", "power_proto", "power_proto_wakefulness"];
+            let mut text = Vec::new();
+            let mut proto = Vec::new();
+            for trial in lines.chunks_exact(4) {
+                let values: Vec<i64> = trial.iter().zip(labels).map(|(line, expected)| {
+                    let (label, value) = line.split_once('=').unwrap(); assert_eq!(label, expected); value.parse().unwrap()
+                }).collect();
+                assert!((0..=2500000).contains(&values[0]) && (0..=2500000).contains(&values[2]));
+                assert!((0..=3).contains(&values[1]) && (-1..=3).contains(&values[3]));
+                assert!(values[1] == values[3] || (values[1] == 0 && values[3] == -1), "Only the documented omitted Asleep default may differ.");
+                text.push(values[0]); proto.push(values[2]);
+            }
+            let mut text_sorted = text.clone(); text_sorted.sort();
+            let mut proto_sorted = proto.clone(); proto_sorted.sort();
+            println!("Validated phone power comparison: text_micros={:?}, text_median_micros={}, proto_micros={:?}, proto_median_micros={}, exact_or_documented_asleep_default=true, credential_access=false, input_sent=false", text, text_sorted[text_sorted.len() / 2], proto, proto_sorted[proto_sorted.len() / 2]);
+        });
+    }
+
     fn target_fixture() -> Target {
         let id = serde_json::to_string(&["synthetic-serial", "Example", "synthetic-product"]).unwrap();
         Target {
@@ -344,6 +468,8 @@ mod tests {
             "@@identity", "synthetic-serial", "Example", "synthetic-product", "0", "37",
             "@@boot", "1", "@@policy", "  KeyguardServiceDelegate", "    showing=true", "    inputRestricted=true", "    userId=0", "    simSecure=false", "    occluded=false", "    bootCompleted=true", "    interactiveState=INTERACTIVE_STATE_AWAKE",
             "@@displays", "Display: mDisplayId=1", "  mCurrentFocus=Window{virtual u0 Example}", "Display: mDisplayId=0", "  mCurrentFocus=Window{keyguard u0 NotificationShade}",
+            "    mRotation=0 mDeferredRotationPauseCount=0",
+            "@@focus_display", "0",
             "@@ime", "  mCurrentImeUserId=0", "  mUserDataRepository:", "    userId=0", "      curClient=ClientState{synthetic mSelfReportedDisplayId=0}", "      curEditorInfo:", "        inputType=0x81 imeOptions=0x12000006", "        packageName=com.android.systemui autofillId=null",
             "@@method", "User State:", "  User 0", "    CredentialType: PASSWORD", "  User 10", "    CredentialType: PIN",
             "@@power", "  mWakefulness=Awake", "@@panel", "Display 123 (HWC display 0):", "  powerMode=Off",
@@ -429,11 +555,27 @@ mod tests {
     fn rejects_duplicate_current_editors_and_main_displays() {
         for (from, to) in [
             ("Display: mDisplayId=0", "Display: mDisplayId=0\nDisplay: mDisplayId=0"),
+            ("@@focus_display\n0\n", "@@focus_display\n1\n"),
+            ("@@focus_display\n0\n", "@@focus_display\n0\n0\n"),
+            ("@@focus_display\n0\n", "@@focus_display\n"),
+            ("@@focus_display\n0\n", "@@focus_display\ninvalid\n"),
             ("      curEditorInfo:", "      curEditorInfo:\n      curEditorInfo:"),
             ("        inputType=0x81 imeOptions=0x12000006", "        inputType=0x81\n        inputType=0x81"),
             ("    userId=0\n      curClient=", "    userId=0\n    userId=0\n      curClient="),
         ] { assert!(!parse_snapshot(&target_fixture(), &fixture().replace(from, to)).unwrap().password_editor); }
         assert!(parse_snapshot(&target_fixture(), &fixture().replace("@@ime", "@@policy")).is_err());
         assert!(parse_snapshot(&target_fixture(), fixture().trim_end_matches("@@end\n")).is_err());
+    }
+
+    #[test]
+    fn native_tap_rotation_metadata_must_belong_only_to_the_current_main_display() {
+        let dump = fixture();
+        assert_eq!(parse_snapshot(&target_fixture(), &dump).unwrap().rotation, Some(0));
+        assert_eq!(parse_snapshot(&target_fixture(), &dump.replace("mRotation=0", "mRotation=1")).unwrap().rotation, Some(1));
+        for malformed in [dump.replace("    mRotation=0 mDeferredRotationPauseCount=0\n", ""), dump.replace("mRotation=0", "mRotation=unknown"), dump.replace("mRotation=0", "mRotation=0\n    mRotation=0"), dump.replace("mRotation=0", "mRotation=4")] {
+            assert_eq!(parse_snapshot(&target_fixture(), &malformed).unwrap().rotation, None);
+        }
+        let secondary = dump.replace("Display: mDisplayId=1\n", "Display: mDisplayId=1\n    mRotation=3\n");
+        assert_eq!(parse_snapshot(&target_fixture(), &secondary).unwrap().rotation, Some(0));
     }
 }

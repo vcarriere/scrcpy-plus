@@ -23,7 +23,7 @@ pub struct Control {
     stream: Option<TcpStream>,
 }
 
-fn local_server(endpoint: &str) -> bool {
+pub(crate) fn local_server(endpoint: &str) -> bool {
     if endpoint.starts_with("localfilesystem:") { return true; }
     let Some(address) = endpoint.strip_prefix("tcp:") else { return false; };
     if address.parse::<u16>().is_ok_and(|port| port != 0) { return true; }
@@ -57,6 +57,19 @@ fn key_message(action: u8, keycode: u32, meta: u32) -> [u8; 14] {
     message[1] = action;
     message[2..6].copy_from_slice(&keycode.to_be_bytes());
     message[10..14].copy_from_slice(&meta.to_be_bytes());
+    message
+}
+
+fn touch_message(action: u8, x: u32, y: u32, width: u16, height: u16) -> [u8; 32] {
+    let mut message = [0; 32];
+    message[0] = 2;
+    message[1] = action;
+    message[2..10].copy_from_slice(&(-2i64).to_be_bytes());
+    message[10..14].copy_from_slice(&x.to_be_bytes());
+    message[14..18].copy_from_slice(&y.to_be_bytes());
+    message[18..20].copy_from_slice(&width.to_be_bytes());
+    message[20..22].copy_from_slice(&height.to_be_bytes());
+    if action == 0 { message[22..24].copy_from_slice(&u16::MAX.to_be_bytes()); }
     message
 }
 
@@ -168,6 +181,16 @@ impl Control {
 
     pub fn select_all(&mut self) -> Result<(), String> { self.key_with_meta(29, 0x1000) }
 
+    pub fn tap(&mut self, x: u32, y: u32, width: u32, height: u32) -> Result<(), String> {
+        if !(100..=10000).contains(&width) || !(100..=10000).contains(&height) || x >= width || y >= height { return Err("The private tap coordinates are unavailable.".into()); }
+        let mut message = [0; 64];
+        message[..32].copy_from_slice(&touch_message(0, x, y, width as u16, height as u16));
+        message[32..].copy_from_slice(&touch_message(1, x, y, width as u16, height as u16));
+        // Down/up share one bounded write. A partial write invalidates the
+        // channel; never repeat an uncertain touch through another backend.
+        self.send(&message)
+    }
+
     fn key_with_meta(&mut self, keycode: u32, meta: u32) -> Result<(), String> {
         for action in [0, 1] {
             self.send(&key_message(action, keycode, meta))?;
@@ -214,6 +237,21 @@ impl Drop for Control {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn private_touch_frames_use_finger_coordinates_pressure_and_no_mouse_buttons() {
+        let down = touch_message(0, 720, 780, 1440, 3120);
+        let up = touch_message(1, 720, 780, 1440, 3120);
+        assert_eq!(&down[..10], &[2, 0, 255, 255, 255, 255, 255, 255, 255, 254]);
+        assert_eq!(u32::from_be_bytes(down[10..14].try_into().unwrap()), 720);
+        assert_eq!(u32::from_be_bytes(down[14..18].try_into().unwrap()), 780);
+        assert_eq!(u16::from_be_bytes(down[18..20].try_into().unwrap()), 1440);
+        assert_eq!(u16::from_be_bytes(down[20..22].try_into().unwrap()), 3120);
+        assert_eq!(&down[22..], &[255, 255, 0, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(up[1], 1);
+        assert_eq!(&up[2..22], &down[2..22]);
+        assert_eq!(&up[22..], &[0; 10]);
+    }
 
     #[test]
     fn control_tunnels_require_a_local_adb_server() {

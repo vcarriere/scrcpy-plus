@@ -38,7 +38,9 @@ BEGIN <nonce>
 @@policy
 <filtered window policy>
 @@displays
-<display IDs and current focus>
+<display IDs, current focus, and current mRotation metadata>
+@@focus_display
+<one nonnegative focused display ID per matching current input-service field>
 @@ime
 <current IME owner/repository/editor metadata and endEditor boundaries>
 @@method
@@ -53,7 +55,7 @@ BEGIN <nonce>
 END <nonce>
 ```
 
-The six Binder dumps run sequentially, between fresh identity reads. A changed
+The seven Binder queries run sequentially, between fresh identity reads. A changed
 identity, missing service, empty filtered service result, reflection failure,
 invalid UTF-8/control data, or exceeded bound produces only
 `ERROR <nonce> unavailable\n` and process termination. A 2.5-second helper deadline
@@ -68,6 +70,65 @@ text, and editor contents are excluded. Existing `awk`/`sed` selection and
 boundary semantics are preserved, including duplicate/malformed metadata which
 the native parser rejects. `ActivityManager`'s Binder interface is queried
 directly for each current-user read, avoiding an application-level cached ID.
+
+Power remains in its original position after lock-method metadata and before the
+final SurfaceFlinger panel query. It now reads the bounded Power `--proto` dump
+and consumes the complete message and joins its worker before using the root
+wakefulness enum. Explicit values 0–3 map to the original symbolic `mWakefulness`
+lines without changing the snapshot schema. The one shared `PowerProto` decoder
+rejects duplicate root state, incorrect wire type, invalid enums, truncation,
+invalid framing, and data exceeding 4 MiB. No state or diagnostic buffer is
+cached, and no Power work runs concurrently with other service queries.
+
+Android omits the default single enum0, so a valid absent root field triggers
+exactly one fresh text Power query inside the same helper/Binder, validated as
+one recognized symbolic state. Absence never infers awake or asleep. Protobuf
+parse, I/O, worker, or unsupported-runtime failures stop the request without a
+format fallback. This preserves authoritative initial asleep checks and keeps
+the complete Power phase before the final panel and identity checks. The
+[separate profiling notes](profile/README.md) link the verified Android 15–17
+schema and text/protobuf state source.
+
+The displays section also retains each line whose trimmed value starts exactly
+`mRotation=`, under its existing display-ID framing. Android 15–17
+`DisplayRotation.dump` emits the current value as
+`mRotation=<int> mDeferredRotationPauseCount=<int>`; its historical rotation
+records use different fields and are excluded. Duplicate/malformed current
+rotation lines remain visible to the native parser, which must require exactly
+one recognized main-display rotation before using any coordinate-dependent
+control. The helper neither chooses coordinates nor sends input. This field is
+defined by AOSP's
+[DisplayRotation dump](https://android.googlesource.com/platform/frameworks/base/+/refs/tags/android-17.0.0_r1/services/core/java/com/android/server/wm/DisplayRotation.java).
+
+Focused display state is also fresh for every snapshot. Official Android 15–17
+`IWindowManager` and `IInputManager` AIDL expose no focused-display getter;
+`getTopFocusedDisplayId` belongs to the system-only WindowManager local service.
+The helper therefore streams a bounded `input` Binder dump, selecting only exact
+`  FocusedDisplayId: [0-9]+` lines inside the exact `Input Dispatcher State:`
+section and emitting their numeric values. The next unindented header ends that
+section, including the explicitly historical `Input Dispatcher State at time of
+last ANR:` section. Missing/malformed current fields or repeated current-section
+headers fail closed; duplicate current fields remain duplicated for the native
+parser to reject. No focus scalar is cached. The field and both section headers
+are defined by AOSP's
+[InputDispatcher diagnostic output](https://android.googlesource.com/platform/frameworks/native/+/refs/tags/android-17.0.0_r1/services/inputflinger/dispatcher/InputDispatcher.cpp).
+
+The serial fallback can use the same framing and fail-closed selection:
+
+```sh
+dumpsys input | awk '
+    /^Input Dispatcher State:$/ {
+        if (++sections > 1) { print "invalid"; active=0; next }
+        active=1; next
+    }
+    active && /^[^[:space:]]/ { active=0 }
+    active && /^  FocusedDisplayId:/ {
+        if ($0 ~ /^  FocusedDisplayId: [0-9]+$/) {
+            sub(/^  FocusedDisplayId: /, ""); print
+        } else { print "invalid" }
+    }
+'
+```
 
 ## Rebuild
 
@@ -94,11 +155,14 @@ concatenation and D8's `--no-desugaring` avoid extra runtime libraries or an
 Android SDK compilation dependency. The helper uses only Java APIs present on
 Android API 35 and Android APIs reached through reflection.
 
-The build runs 36 host-only synthetic checks, including an actual-entry-point
-subprocess with deliberately redirected Java streams, compiles with `--release 8`, and
-converts only helper classes into one `classes.dex`. It verifies the final
+The build runs 51 helper, 39 strict protobuf/text parser, and 27 Power
+mapping/freshness/fallback host checks, including an actual-entry-point subprocess
+with deliberately redirected Java streams. It compiles all production sources
+with `--release 8` and converts only production classes into one `classes.dex`;
+tests and profiling classes are excluded. It verifies the final
 archive structure and writes `application/src-tauri/resources/unlock-guard.jar`
-plus `build-receipt.json`. It does not establish real-device compatibility or
+plus `build-receipt.json`, which records each production source path and hash.
+It does not establish real-device compatibility or
 latency; read-only target benchmarking belongs to the native integration.
 
 ## Build tool licenses

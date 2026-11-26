@@ -74,7 +74,7 @@ impl Session {
         { let _ = (target, cancelled); return Err(UNAVAILABLE.into()); }
         #[cfg(windows)]
         {
-            if target.sdk < 35 || target.binding.user != 0 || cancelled() { return Err(UNAVAILABLE.into()); }
+            if target.sdk < 35 || target.binding.user != 0 || !crate::screen_power_control::local_server(&target.client.socket) || cancelled() { return Err(UNAVAILABLE.into()); }
             let transport = target.selection.transport_id.filter(|id| *id != 0).ok_or(UNAVAILABLE)?.to_string();
             let seed = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
             let name = format!("scrcpy-plus-unlock-guard-{}-{}-{}.jar", std::process::id(), seed, NEXT_REQUEST.fetch_add(1, Ordering::Relaxed));

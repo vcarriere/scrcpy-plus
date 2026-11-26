@@ -5,9 +5,11 @@ use crate::{ adb_server, mdns_discovery, screen_power::AdbClient, system_command
 
 const MAX_ROUTES: usize = 64;
 const PROPERTIES: [&str; 8] = ["ro.serialno", "ro.product.manufacturer", "ro.product.device", "ro.product.model", "ro.build.version.release", "ro.build.version.sdk", "ro.build.id", "ro.build.version.security_patch"];
+const IDENTITY_PROPERTIES: [&str; 3] = [PROPERTIES[0], PROPERTIES[1], PROPERTIES[2]];
 // Only fixed ASCII property names reach echo; no value/escape interpretation is
-// changed. Android's builtin avoids eight formatter processes per validation.
+// changed. Android's builtin avoids separate formatter processes.
 const DETAILS: &str = "for property in ro.serialno ro.product.manufacturer ro.product.device ro.product.model ro.build.version.release ro.build.version.sdk ro.build.id ro.build.version.security_patch; do echo -n \"$property=\"; getprop \"$property\"; done";
+const IDENTITY: &str = "for property in ro.serialno ro.product.manufacturer ro.product.device; do echo -n \"$property=\"; getprop \"$property\"; done";
 const CHANGED: &str = "The device connection changed. Wait for the device list to refresh, then select its connection again.";
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -98,16 +100,29 @@ fn listing(output: &str, client: &AdbClient) -> Vec<Route> {
     routes
 }
 
-fn details(output: &str) -> Option<(Info, Option<String>, String)> {
+fn property_values<'a>(output: &'a str, properties: &[&str]) -> Option<Vec<&'a str>> {
     let lines: Vec<_> = output.lines().collect();
-    if lines.len() != PROPERTIES.len() { return None; }
+    if lines.len() != properties.len() { return None; }
     let mut values = Vec::new();
-    for (line, property) in lines.iter().zip(PROPERTIES) {
+    for (line, property) in lines.iter().zip(properties) {
         let (key, property_value) = line.split_once('=')?;
-        if key != property || !valid_value(property_value) { return None; }
+        if key != *property || !valid_value(property_value) { return None; }
         values.push(property_value.trim());
     }
-    let identity = values[..3].iter().all(|item| identity_value(item)).then(|| serde_json::to_string(&values[..3]).unwrap());
+    Some(values)
+}
+
+fn hardware_identity(values: &[&str]) -> Option<String> {
+    (values.len() == IDENTITY_PROPERTIES.len() && values.iter().all(|item| identity_value(item))).then(|| serde_json::to_string(values).unwrap())
+}
+
+fn identity_details(output: &str) -> Option<String> {
+    hardware_identity(&property_values(output, &IDENTITY_PROPERTIES)?)
+}
+
+fn details(output: &str) -> Option<(Info, Option<String>, String)> {
+    let values = property_values(output, &PROPERTIES)?;
+    let identity = hardware_identity(&values[..3]);
     Some((Info {
         model: values[3].into(), model_id: values[2].into(), version: values[4].into(), sdk: values[5].into(), build: values[6].into(), security_patch: values[7].into(),
     }, identity, values[0].into()))
@@ -224,7 +239,7 @@ fn verify(selection: &Selection, client: &AdbClient, args: &[&str], query: &mut 
     let route = listing(&output, client).into_iter().find(|route| route.serial == selection.serial && route.transport_id == selection.transport_id && route.state == "device").ok_or(CHANGED)?;
     let Some(id) = route.transport_id else { return Err(CHANGED.into()); };
     if let Some(identity) = &selection.identity {
-        let current = query(&["-t", &id.to_string(), "shell", DETAILS]).ok().and_then(|output| details(&output)).and_then(|(_, identity, _)| identity);
+        let current = query(&["-t", &id.to_string(), "shell", IDENTITY]).ok().and_then(|output| identity_details(&output));
         if current.as_ref() != Some(identity) { return Err(CHANGED.into()); }
     }
     Ok(())
@@ -251,7 +266,7 @@ fn disconnect_checked(selection: &Selection, client: &AdbClient, query: &mut imp
     if !["tcp", "mdns"].contains(&route.kind) { return Err("Only wireless connections can be disconnected here.".into()); }
     if route.state == "device" && selection.identity.is_some() {
         let Some(id) = route.transport_id else { return Err(CHANGED.into()); };
-        let current = query(&["-t", &id.to_string(), "shell", DETAILS]).ok().and_then(|output| details(&output)).and_then(|(_, identity, _)| identity);
+        let current = query(&["-t", &id.to_string(), "shell", IDENTITY]).ok().and_then(|output| identity_details(&output));
         if current != selection.identity { return Err(CHANGED.into()); }
     }
     query(&["disconnect", &selection.serial]).map(|_| ())
@@ -291,6 +306,10 @@ mod tests {
 
     fn properties(serial: &str, maker: &str, product: &str) -> String {
         PROPERTIES.iter().zip([serial, maker, product, "Example Phone", "17", "37", "TEST.1", "2026-11-01"]).map(|(key, value)| format!("{}={}\n", key, value)).collect()
+    }
+
+    fn identity_properties(serial: &str, maker: &str, product: &str) -> String {
+        IDENTITY_PROPERTIES.iter().zip([serial, maker, product]).map(|(key, value)| format!("{}={}\n", key, value)).collect()
     }
 
     #[test]
@@ -356,6 +375,28 @@ mod tests {
     }
 
     #[test]
+    fn strict_identity_response_preserves_the_inventory_binding() {
+        let full = properties("PHONE1234", "Example", "one");
+        let identity = identity_properties("PHONE1234", "Example", "one");
+        assert_eq!(identity_details(&identity), details(&full).unwrap().1);
+        for invalid in [
+            full,
+            "ro.serialno=PHONE1234\nro.product.manufacturer=Example\n".into(),
+            identity.clone() + "extra=value\n",
+            identity.replace("ro.product.manufacturer=Example", "ro.serialno=OTHER"),
+            identity.replace("ro.product.device=one", "foreign.property=one"),
+            identity_properties("PHONE\nOTHER", "Example", "one"),
+            identity_properties("PHONE\0OTHER", "Example", "one"),
+            identity_properties(&"P".repeat(257), "Example", "one"),
+            identity_properties("PHONE1234", "unknown", "one"),
+            identity_properties("PHONE1234", "Example", ""),
+            identity_properties("0123456789ABCDEF", "Example", "one"),
+        ] { assert!(identity_details(&invalid).is_none()); }
+        let reordered = "ro.product.manufacturer=Example\nro.serialno=PHONE1234\nro.product.device=one\n";
+        assert!(identity_details(reordered).is_none());
+    }
+
+    #[test]
     fn listings_are_bounded_and_keep_full_long_and_ipv6_selectors() {
         let long = format!("adb-{}._adb-tls-connect._tcp", "a".repeat(63));
         let output = format!("List of devices attached\n{} device transport_id:7\n{} device transport_id:7\n[fd00::1234]:5555 device transport_id:8\n", long, long);
@@ -375,7 +416,11 @@ mod tests {
         inspect(&mut routes, &mut |_| Ok(properties("PHONE1234", "Example", "one")));
         let selection = routes[0].selection.clone();
         let args = ["-s", selection.serial.as_str(), "--no-audio"];
-        let verify_with = |listing: &str, serial: &str| verify(&selection, &client, &args, &mut |args| Ok(if args == ["devices", "-l"] { listing.into() } else { properties(serial, "Example", "one") }));
+        let verify_with = |listing: &str, serial: &str| verify(&selection, &client, &args, &mut |args| {
+            if args == ["devices", "-l"] { return Ok(listing.into()); }
+            assert_eq!(args, ["-t", "7", "shell", IDENTITY]);
+            Ok(identity_properties(serial, "Example", "one"))
+        });
         assert!(verify_with(output, "PHONE1234").is_ok());
         assert!(verify_with(output, "OTHER5678").is_err());
         assert!(verify_with(&output.replace("transport_id:7", "transport_id:8"), "PHONE1234").is_err());
@@ -428,6 +473,46 @@ mod tests {
         assert_eq!(calls, [vec!["devices", "-l"], vec!["disconnect", "10.23.4.5:5555"]]);
         assert!(disconnect_checked(&routes[1].selection, &client, &mut |_| Ok(output.into())).is_err());
         assert!(disconnect_checked(&routes[0].selection, &client, &mut |_| Ok(output.replace("transport_id:7", "transport_id:9"))).is_err());
+    }
+
+    #[test]
+    fn launch_and_disconnect_require_a_fresh_strict_three_property_identity() {
+        let client = client();
+        let listing = "List of devices attached\n10.23.4.5:5555 device transport_id:7\n";
+        let mut routes = super::listing(listing, &client);
+        inspect(&mut routes, &mut |_| Ok(properties("PHONE1234", "Example", "one")));
+        let selection = &routes[0].selection;
+        let correct = identity_properties("PHONE1234", "Example", "one");
+        for (response, accepted) in [
+            (correct.clone(), true),
+            (identity_properties("OTHER5678", "Example", "one"), false),
+            (identity_properties("PHONE1234", "Other", "one"), false),
+            (identity_properties("PHONE1234", "Example", "other"), false),
+            ("ro.serialno=PHONE1234\nro.product.manufacturer=Example\n".into(), false),
+            (correct.clone() + "extra=value\n", false),
+            (correct.replace("ro.product.device=one", "ro.serialno=PHONE1234"), false),
+            (identity_properties("unknown", "Example", "one"), false),
+            (properties("PHONE1234", "Example", "one"), false),
+        ] {
+            let mut identity_reads = 0;
+            let verified = verify(selection, &client, &["-s", &selection.serial], &mut |args| {
+                if args == ["devices", "-l"] { return Ok(listing.into()); }
+                assert_eq!(args, ["-t", "7", "shell", IDENTITY]);
+                identity_reads += 1;
+                Ok(response.clone())
+            });
+            assert_eq!(verified.is_ok(), accepted);
+            assert_eq!(identity_reads, 1);
+            let mut disconnects = 0;
+            let disconnected = disconnect_checked(selection, &client, &mut |args| {
+                if args == ["devices", "-l"] { return Ok(listing.into()); }
+                if args == ["disconnect", selection.serial.as_str()] { disconnects += 1; return Ok(String::new()); }
+                assert_eq!(args, ["-t", "7", "shell", IDENTITY]);
+                Ok(response.clone())
+            });
+            assert_eq!(disconnected.is_ok(), accepted);
+            assert_eq!(disconnects, usize::from(accepted));
+        }
     }
 
     #[test]

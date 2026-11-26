@@ -18,6 +18,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /** Read-only, shell-UID diagnostic bridge. All credential decisions remain native. */
@@ -140,6 +141,7 @@ public final class Main {
         private final Method fileDescriptor;
         private final Method close;
         private final Constructor<?> autoCloseInput;
+        private final PowerDump power;
         private final Object activity;
         private final Method currentUser;
         private final Field userId;
@@ -153,6 +155,7 @@ public final class Main {
             fileDescriptor = descriptor.getMethod("getFileDescriptor");
             close = descriptor.getMethod("close");
             autoCloseInput = Class.forName("android.os.ParcelFileDescriptor$AutoCloseInputStream").getConstructor(descriptor);
+            power = new PowerDump(service, dump, createPipe, fileDescriptor, close, autoCloseInput);
             activity = Class.forName("android.app.ActivityManager").getMethod("getService").invoke(null);
             if (activity == null) {
                 throw new IOException("Activity service unavailable");
@@ -179,9 +182,10 @@ public final class Main {
             append(output, "@@boot\n" + getProperty("sys.boot_completed") + "\n");
             dump(output, "@@policy\n", "window", new String[] {"policy"}, new PolicyFilter());
             dump(output, "@@displays\n", "window", new String[] {"displays"}, new DisplaysFilter());
+            dump(output, "@@focus_display\n", "input", new String[0], new FocusDisplayFilter());
             dump(output, "@@ime\n", "input_method", new String[0], new ImeFilter());
             dump(output, "@@method\n", "lock_settings", new String[0], new MethodFilter());
-            dump(output, "@@power\n", "power", new String[0], new PowerFilter());
+            append(output, power());
             dump(output, "@@panel\n", "SurfaceFlinger", new String[] {"--displays"}, new PanelFilter());
             String after = identity();
             if (!before.equals(after)) {
@@ -189,6 +193,22 @@ public final class Main {
             }
             append(output, "@@identity_end\n" + after + "@@end\n");
             return output.toString();
+        }
+
+        private String power() throws Exception {
+            return PowerDump.current(new PowerDump.ProtoRead() {
+                @Override
+                public int read() throws Exception {
+                    return power.read();
+                }
+            }, new PowerDump.TextRead() {
+                @Override
+                public String read() throws Exception {
+                    StringBuilder filtered = new StringBuilder();
+                    dump(filtered, "@@power\n", "power", new String[0], new PowerFilter());
+                    return filtered.toString();
+                }
+            });
         }
 
         private String getProperty(String name) throws Exception {
@@ -342,8 +362,37 @@ public final class Main {
     static final class DisplaysFilter implements Filter {
         @Override
         public void line(String line, StringBuilder output) throws IOException {
-            if (line.contains("Display: mDisplayId=") || line.contains("mCurrentFocus=")) {
+            if (line.contains("Display: mDisplayId=") || line.contains("mCurrentFocus=") || line.trim().startsWith("mRotation=")) {
                 append(output, line + "\n");
+            }
+        }
+    }
+
+    static final class FocusDisplayFilter implements Filter {
+        private static final Pattern FIELD = Pattern.compile("^  FocusedDisplayId: ([0-9]+)$");
+        private static final Pattern END = Pattern.compile("^\\S");
+        private boolean active;
+        private int sections;
+
+        @Override
+        public void line(String line, StringBuilder output) throws IOException {
+            if (line.equals("Input Dispatcher State:")) {
+                if (++sections != 1) {
+                    throw new IOException("Duplicate current input state");
+                }
+                active = true;
+                return;
+            }
+            if (END.matcher(line).find()) {
+                active = false;
+            }
+            if (active && line.startsWith("  FocusedDisplayId:")) {
+                Matcher match = FIELD.matcher(line);
+                if (!match.matches()) {
+                    throw new IOException("Invalid focused display state");
+                }
+                // Preserve duplicate current fields for native ambiguity checks.
+                append(output, match.group(1) + "\n");
             }
         }
     }

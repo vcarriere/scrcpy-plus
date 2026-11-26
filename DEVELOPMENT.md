@@ -62,6 +62,136 @@ device labels/grouping, and full child-process cancellation as backlog work.
 Later checkpoints below record the implemented additions and their distinct
 source, simulated, and live verification limits.
 
+## Further native startup optimization — November 26, 2026
+
+The final candidate produced two successful complete locked/asleep Pixel starts:
+
+- First run: entry at **3.497 s**, Enter at **3.921 s**, verified unlock at
+  **4.223 s**, first headless video at **5.337 s**.
+- Repeat: entry at **3.210 s**, Enter at **3.614 s**, verified unlock at
+  **3.836 s**, first headless video at **4.790 s**.
+
+This is roughly **25–33% less startup time** than v23's 7.108 s and about
+67–70% less than the original 16.207 s baseline. Entry/guard time was
+0.404–0.424 s. These are individual Wi-Fi runs with SDL dummy/software rendering,
+not guarantees for desktop-window appearance or a full old-helper A/B comparison.
+Each run used the production native validation and mirroring path with one
+guarded attempt, no recording/credential output, and native confirmation of the
+same owner unlocked. Both ended with sleep restored and enrollment unblocked.
+The owned mirror, helper processes, and local/remote temporary JARs were absent
+afterward. Shared ADB remained PID 44996 and the tablet stayed connected.
+
+The implementation overlaps the read-only diagnostic startup with the private
+control-channel startup, joining both before use and before releasing the phone
+lease on any failure. Actions verify just the three fresh identity properties;
+inventory still reads all eight display/detail fields through the same strict
+parser. Screen-off transitions are observed within a bounded settling window
+instead of relying on fixed sleeps. A guarded native wake retains the explicit
+display-0 shell fallback. Alternate-bouncer taps use one bounded down/up control
+write only with fresh owner/method/keyguard, global display-0 focus, awake,
+physical-Off, and main-display rotation-0 checks. Unknown/rotated geometry uses
+the prior shell tap. Two stable editor observations and every clear/character/
+Enter guard remain. Two early verification observations precede the twelve
+existing 350 ms settling waits; Enter is never resubmitted.
+
+The largest additional gain came from replacing only the Power dump format,
+at its original position after lock settings and before final panel/identity
+checks. A hash-pinned read-only profiler measured text Power medians of
+**44.631 ms** versus **2.516 ms** for protobuf (five alternating pairs), with
+complete native identity/state parsing before and after. Android 15/16/17 source
+confirms root field 3/wire 0 reads the same `mWakefulnessRaw` as text: Asleep 0,
+Awake 1, Dreaming 2, Dozing 3. `isInteractive` was not substituted. The decoder
+consumes the complete bounded response, rejects malformed/truncated/ambiguous/
+wrong-wire/unknown-state data, and joins its dump worker before accepting a
+result. A valid omitted zero enum triggers one fresh symbolic text query inside
+the same helper; it never infers Awake or falls back after parse/I/O failure.
+Early parallel Power sampling was not implemented, preserving state-read order.
+Primary sources and the exact schema are linked in the helper/profile READMEs.
+
+The final helper is 10,440 bytes, SHA-256
+`5bab4c67970d5e34be4cabdfbaa7dd7d5a97693323af8c4ac1fcb15ca0d9bfb0`.
+All three production source hashes match its receipt; Java sources stay LF
+through a local attributes rule. Two builds matched exactly. **117 host helper
+checks** passed (51 filtering/protocol, 39 wire parser, 27 state/fallback tests).
+The native suite passed **149 tests**, with 28 opt-in/environment tests ignored;
+the relevant read-only, preparation, recovery, and full unlock tests were run
+separately. Independent scoped reviews found no further concrete regression.
+Frontend files remain unchanged from the verified v24 UI.
+
+Final timings are retained in
+`artifacts/unlock-startup-benchmark-compact-power.json` and
+`artifacts/unlock-startup-benchmark-compact-power-repeat.json`. The rejected
+editor shortcut and its verified manual recovery are recorded below; no unsafe
+shortcut or keep-off-before-wake experiment is included. The native test harness
+now records sleep cleanup separately from authentication success. Full remaining
+device/recovery parity stays on the backlog.
+
+## Pixel access resumed — November 26, 2026
+
+The owner explicitly resumed access with "pixel is back". The same Pixel is
+connected on a new verified transport (175); previous transport IDs must not be
+reused. No mirror or native test was running when access resumed. The pause
+below is historical and has ended. Continue the existing optimization task and
+its guarded, one-attempt testing/recovery limits.
+
+### Historical pause checkpoint
+
+The owner is disconnecting the phone and explicitly paused **all Pixel use**.
+Do not send ADB reads, tests, input, power changes, or device cleanup commands
+until the owner explicitly resumes Pixel access. A host-only process inspection
+confirmed no active test process or scrcpy mirror; shared ADB PID 44996 was left
+running for other devices. The last read-only benchmark had already completed
+and returned normally before this pause. No further phone command was issued.
+
+Further startup optimization is uncommitted and not packaged; v24 remains the
+latest completed preview. The conservative candidate retains explicit window
+keyguard dismissal and guarded alternate-bouncer preparation. Its latest full
+Pixel run verified unlock at **5.271 s** and headless video at **6.346 s**;
+the preceding conservative run measured **5.154/6.451 s**. Both completed with
+sleep restored and enrollment unblocked. Artifacts are
+`artifacts/unlock-startup-benchmark-native-tap.json` and
+`artifacts/unlock-startup-benchmark-explicit-bouncer.json`.
+
+Pending changes include parallel private-channel setup, three-property identity
+verification, actual panel-state polling, guarded native wake/tap, current-only
+global display focus and rotation metadata, and early verification observations.
+Native touch is limited to verified rotation 0; unsupported geometry retains
+the previous explicit-display shell tap. The normal helper has 51 synthetic
+checks and SHA-256
+`71f51ac3090be29ae347bc08a03357b16689e9756a76e2f2b7430867e0d73d03`.
+The last normal native suite passed 149 tests before the final read-only profile
+test was added. Focused review found no further concrete regression.
+
+One rejected experimental editor-ready/MENU shortcut submitted without verified
+unlock and correctly kept the persistent attempt block. Current IME metadata
+can outlive a hidden bouncer across sleep, so the shortcut was removed. The
+owner explicitly unlocked manually; a fresh native same-owner/password/unlocked
+check then completed normal recovery without credential retrieval or input.
+Subsequent conservative attempts succeeded. A keep-off-before-wake experiment
+also showed no benefit and was removed. Neither experiment is in the candidate.
+The preparation-only test now distinguishes safe sleeping Off/Doze states from
+exact awake panel restoration; an initial overly strict Doze comparison failed
+even though logical sleep was restored. Benchmark JSON now records cleanup
+separately from successful authentication.
+
+A separate hash-pinned, read-only phone profiler validated snapshots before/after
+measurement. Median on-phone dump times were policy 2.226 ms, displays 3.126 ms,
+focused display 6.595 ms, IME 11.369 ms, lock settings 3.731 ms, **power 34.283 ms**,
+and SurfaceFlinger 1.975 ms. The current persistent helper baseline measured
+111/79/145/92/90 ms (median **92 ms**) for complete parsed responses. Profile
+source/build instructions are under `buildtools/unlock-guard/profile/` and
+`Build-Profile.ps1`; its standalone JAR is not part of the application.
+
+One possible next investigation is overlapping the expensive power dump with
+other reads while preserving final panel and identity checks. It has **not**
+been implemented or approved as a proven optimization. Review the temporal
+tradeoff first: PowerManager prints wakefulness near the start of its dump, so
+an earlier concurrent sample may age while other queries run. Do not drop or
+weaken that state check. No GO was sent to the helper worker before this pause.
+Resume from the existing working tree; do not reapply rejected shortcuts or
+retry a blocked attempt. Finish the appropriate checks, measurements, and one
+coherent preview only after any required phone access is explicitly resumed.
+
 ## Compact update results — November 26, 2026
 
 Settings now shows version numbers only for components with an available update.

@@ -102,8 +102,9 @@ $testClasses = Join-Path $buildRoot 'tests'
 [IO.Directory]::CreateDirectory($classes) | Out-Null
 [IO.Directory]::CreateDirectory($testClasses) | Out-Null
 $source = Join-Path $PSScriptRoot 'src\com\scrcpyplus\unlockguard\Main.java'
-$test = Join-Path $PSScriptRoot 'test\com\scrcpyplus\unlockguard\MainTest.java'
-& $javac --release $manifest.javaRelease -XDstringConcat=inline -encoding UTF-8 -g:none -d $classes $source
+$sources = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Recurse -File -Filter '*.java' | Sort-Object FullName)
+$sourcePaths = @($sources | ForEach-Object FullName)
+& $javac --release $manifest.javaRelease -XDstringConcat=inline -encoding UTF-8 -g:none -d $classes @sourcePaths
 if ($LASTEXITCODE -ne 0) { throw 'Helper Java compilation failed.' }
 # Android ART rejects Java 11 nestmate accesses without D8 desugaring. Keep
 # every shipped class at Java 8, which generates the required accessors.
@@ -113,10 +114,20 @@ foreach ($classFile in Get-ChildItem -LiteralPath $classes -Recurse -File -Filte
         throw 'Helper classes must use Java 8 bytecode for Android nestmate compatibility.'
     }
 }
-& $javac --release $manifest.javaRelease -XDstringConcat=inline -encoding UTF-8 -g:none -cp $classes -d $testClasses $test
+$testPaths = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'test') -Recurse -File -Filter '*.java' | Sort-Object FullName | ForEach-Object FullName)
+& $javac --release $manifest.javaRelease -XDstringConcat=inline -encoding UTF-8 -g:none -cp $classes -d $testClasses @testPaths
 if ($LASTEXITCODE -ne 0) { throw 'Helper synthetic-test compilation failed.' }
 & $java -cp ($classes + [IO.Path]::PathSeparator + $testClasses) com.scrcpyplus.unlockguard.MainTest
 if ($LASTEXITCODE -ne 0) { throw 'Helper synthetic checks failed.' }
+$powerCheckCounts = @{}
+foreach ($suite in @('PowerProtoTest', 'PowerDumpTest')) {
+    $testOutput = (& $java -cp ($classes + [IO.Path]::PathSeparator + $testClasses) ('com.scrcpyplus.unlockguard.' + $suite) | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $testOutput -notmatch '^power-(?:proto|dump) synthetic checks passed: ([0-9]+)$') {
+        throw 'Power strict-parser or fallback checks failed.'
+    }
+    $powerCheckCounts[$suite] = [int]$Matches[1]
+    Write-Output $testOutput
+}
 $classArchive = Join-Path $buildRoot 'classes.jar'
 & $jar --create --file $classArchive --no-manifest --date '2026-11-26T00:00:00Z' -C $classes .
 if ($LASTEXITCODE -ne 0) { throw 'Helper class packaging failed.' }
@@ -135,13 +146,19 @@ $resource = Join-Path $projectRoot 'application\src-tauri\resources\unlock-guard
 [IO.File]::Copy($dexArchive, $resource, $true)
 $receipt = [ordered]@{
     sourceSha256 = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
+    sources = @($sources | ForEach-Object { [ordered]@{
+        path = $_.FullName.Substring($projectRoot.Length + 1).Replace('\', '/')
+        sha256 = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    } })
     helperSha256 = (Get-FileHash -LiteralPath $resource -Algorithm SHA256).Hash.ToLowerInvariant()
     helperBytes = (Get-Item -LiteralPath $resource).Length
     javaRelease = $manifest.javaRelease
     androidMinApi = $manifest.androidMinApi
     javaVersion = (& $javac --version | Out-String).Trim()
     d8Version = (& $java -cp $d8 com.android.tools.r8.D8 --version | Out-String).Trim()
-    syntheticChecks = 36
+    syntheticChecks = 51
+    protoSyntheticChecks = $powerCheckCounts['PowerProtoTest']
+    powerSyntheticChecks = $powerCheckCounts['PowerDumpTest']
     deviceTested = $false
 }
 $receipt | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $PSScriptRoot 'build-receipt.json') -Encoding UTF8

@@ -230,6 +230,15 @@ and password helper are not replaced or imported.
     When everything is current, only the short up-to-date message appears.
     Version numbers appear only for components with an available update.
     Failed checks keep their status/recovery actions without version details.
+28. V25 further reduces startup through parallel private-channel preparation,
+    smaller identity-only validation reads, and compact Power-state diagnostics.
+    Explicit password-bouncer preparation and all character/Enter checks remain.
+    Fresh global display focus is verified; native alternate-bouncer taps require
+    verified portrait orientation, otherwise the existing shell path is kept.
+    Two controlled Pixel runs measured 3.836/4.223 seconds to verified unlock and
+    4.790/5.337 seconds to first headless video, versus 5.895/7.108 in v23.
+    These are individual Wi-Fi/headless measurements. Recovery/parity cases are
+    still listed separately in the backlog; no failed password is retried.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI
