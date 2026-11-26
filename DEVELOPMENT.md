@@ -74,10 +74,12 @@ Only helper source was inspected; its saved credential was not read or migrated.
 
 A read-only probe targeted the connected Pixel 7 Pro's existing ADB transport and
 running server executable. It sent no input, power, lock, connection, or server
-lifecycle commands and accessed no credential record. Three-trial medians were:
-full native snapshot **778.6 ms** (716.1–808.0 ms); equivalent old-helper three
-service queries **134.0 ms**; empty ADB round trip **65.8 ms**; repeated identity/
-user queries **285.2 ms**. The three-service sample excludes the old helper's
+lifecycle commands and accessed no credential record. Initial three-trial medians
+were 778.6 ms for the full native snapshot and 134.0 ms for the earlier helper's
+three service queries. A follow-up probe measured the baseline full snapshot at
+**800.5 ms** (778.9–860.7 ms), the equivalent three-service queries at **127.1 ms**,
+an empty ADB round trip at **58.7 ms**, and repeated identity/user queries at
+**268.5 ms**. The three-service sample excludes the old helper's
 parsing, input delivery, waits, and full unlock lifecycle. These are component
 measurements in the phone's existing state, not a timed password replay or an
 end-to-end speed ratio. Scripts/statistics remain locally under
@@ -93,6 +95,16 @@ The expected savings are 80 ms per character plus one full preparation snapshot;
 an actual before/after credential replay has not been performed. The dominant
 per-character snapshot cost remains, so this is not a full startup-speed fix.
 
+A third optimization invokes `cmd activity get-current-user` directly instead of
+the `am` shell wrapper, retaining the same current-user result and every guard.
+The phone's installed wrapper and the official
+[Android 15 wrapper](https://github.com/aosp-mirror/platform_frameworks_base/blob/android-15.0.0_r1/cmds/am/am.sh)
+both forward that operation to `cmd activity`. The candidate full snapshot measured
+**732.7 ms** (688.3–752.1 ms) in the follow-up probe. This remains a small-sample
+component comparison, not a full unlock-time measurement. Bulk property retrieval
+was also tried read-only and produced equivalent identity output, but its 766.8 ms
+full-snapshot median did not justify incorporating the more complex shell parser.
+
 Whole-password INJECT_TEXT batching was considered but not used: the pinned
 [scrcpy controller](https://github.com/Genymobile/scrcpy/blob/v5.0.1/server/src/main/java/com/genymobile/scrcpy/control/Controller.java)
 injects characters asynchronously, so a whole-string send is not an atomic,
@@ -103,7 +115,8 @@ Verification: **141 native tests passed**, with 21 environment/opt-in tests igno
 Focus changes were tested at every character boundary and immediately before
 submission; cancellation after input remains blocked without submission. The
 frontend and command contracts are unchanged from v20's verified UI. Preview v21
-is the packaging target for these limited improvements.
+was an intermediate local artifact for the first two changes; v22 packages all
+three limited improvements. No live credential replay was performed.
 
 ## Startup progress checkpoint — November 26, 2026
 

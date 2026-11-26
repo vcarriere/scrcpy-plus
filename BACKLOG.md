@@ -224,6 +224,9 @@ a fingerprint prompt, and an app's authentication prompt is not device unlock.
       character versus 134.0 ms for the earlier helper's three service queries
       (component-only comparison). Remove the unnecessary 80 ms typing pause
       and one duplicate preparation snapshot while preserving all input guards.
+      Use the current-user service directly instead of its shell wrapper; a
+      follow-up component probe measured 800.5 ms baseline versus 732.7 ms for
+      that full snapshot variant. These are not full password-replay timings.
 - [ ] Reduce the dominant per-character diagnostic cost further without losing
       current identity/user/editor/panel checks, cancellation, or failure blocking.
       Compare guarded diagnostic transport options, then perform an authorized

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::{ adb_server, device_inventory::{ self, Selection }, screen_power::{ self, AdbClient, Panel }, system_command, unlock_store::Binding };
 
-const IDENTITY_QUERY: &str = "getprop ro.serialno; getprop ro.product.manufacturer; getprop ro.product.device; am get-current-user; getprop ro.build.version.sdk";
+const IDENTITY_QUERY: &str = "getprop ro.serialno; getprop ro.product.manufacturer; getprop ro.product.device; cmd activity get-current-user; getprop ro.build.version.sdk";
 const METHOD_QUERY: &str = r#"dumpsys lock_settings | awk '
     /^User State:$/ { active=1; print; next }
     active && /^[^[:space:]]/ { active=0 }
@@ -15,7 +15,7 @@ printf '@@identity\n'
 getprop ro.serialno
 getprop ro.product.manufacturer
 getprop ro.product.device
-am get-current-user
+cmd activity get-current-user
 getprop ro.build.version.sdk
 printf '@@boot\n'
 getprop sys.boot_completed
@@ -48,7 +48,7 @@ printf '@@identity_end\n'
 getprop ro.serialno
 getprop ro.product.manufacturer
 getprop ro.product.device
-am get-current-user
+cmd activity get-current-user
 getprop ro.build.version.sdk
 printf '@@end\n'
 "#;
