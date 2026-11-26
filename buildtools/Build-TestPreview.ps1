@@ -226,6 +226,10 @@ and password helper are not replaced or imported.
     not an old-helper comparison or a guarantee for every launch. The repository's
     buildtools/Measure-UnlockStartup.ps1 supports metadata-only preflight and an
     explicit one-attempt -RunUnlock benchmark without password arguments/logging.
+27. Under Automatically check for updates, current components are hidden.
+    When everything is current, only the short up-to-date message appears.
+    Version numbers appear only for components with an available update.
+    Failed checks keep their status/recovery actions without version details.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI

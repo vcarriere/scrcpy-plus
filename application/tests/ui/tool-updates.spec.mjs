@@ -15,23 +15,26 @@ async function setup(page, options = {}, automatic = false) {
     await page.route("https://api.github.com/repos/Frontesque/scrcpy-plus/releases", route => route.fulfill({ json: [app_release] }));
 }
 
-test("manual checks include both tools while automatic checking is disabled and never install", async ({ page }) => {
+test("manual checks include both tools but show versions only for available updates", async ({ page }) => {
     await setup(page);
     await page.goto("/settings");
     await page.getByRole("button", { name: "Check for updates", exact: true }).click();
     await expect(page.getByText("ADB: 37.0.2-1234 → 37.0.3", { exact: true })).toBeVisible();
-    await expect(page.getByText("scrcpy: 5.0.1 → v5.0.1", { exact: true })).toBeVisible();
+    await expect(page.getByText("scrcpy: 5.0.1 → v5.0.1", { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem("setting.disable_update_check"))).toBe("true");
     expect(await page.evaluate(() => adb_test.calls.filter(call => call.command === "get_tool_updates").length)).toBe(1);
     expect(await page.evaluate(() => adb_test.calls.filter(call => ["download_adb", "download_scrcpy", "activate_tool_paths"].includes(call.command)))).toEqual([]);
+    await mkdir("../artifacts", { recursive: true });
+    await page.screenshot({ path: "../artifacts/update-settings-available-preview.png", fullPage: true, animations: "disabled" });
 });
 
 test("one failed source does not erase another component's result or claim all are current", async ({ page }) => {
-    await setup(page, { tool_updates: [{ tool: "adb", state: "error" }, current] });
+    await setup(page, { tool_updates: [{ ...available, state: "error" }, current] });
     await page.goto("/settings");
     await page.getByRole("button", { name: "Check for updates", exact: true }).click();
     await expect(page.getByRole("alert")).toContainText("Some update checks could not be completed.");
-    await expect(page.getByText("scrcpy: 5.0.1 → v5.0.1", { exact: true })).toBeVisible();
+    await expect(page.getByText("scrcpy: 5.0.1 → v5.0.1", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("ADB: 37.0.2-1234 → 37.0.3", { exact: true })).toHaveCount(0);
     await expect(page.getByText("SCRCPY+, ADB and scrcpy are up to date.", { exact: true })).toHaveCount(0);
 });
 
@@ -45,6 +48,7 @@ test("automatic tool installation waits for idle and preserves its opt-in", asyn
     await page.evaluate(() => { adb_test.sessions = 0; });
     await page.clock.fastForward(61000);
     await expect.poll(() => page.evaluate(() => adb_test.calls.filter(call => call.command === "download_adb").length)).toBe(1);
+    await expect(page.getByText("ADB: 37.0.2-1234 → 37.0.3", { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem("setting.auto_update_adb"))).toBe("true");
     expect(await page.evaluate(() => localStorage.getItem("scrcpyplus.scrcpy_path"))).toBeNull();
 });

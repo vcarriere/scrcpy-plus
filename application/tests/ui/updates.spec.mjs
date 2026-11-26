@@ -15,7 +15,10 @@ for (const disabled of [true, false]) {
             await pending;
             await route.fulfill({ json: [release] });
         });
-        await mock(page, { update_preference: disabled });
+        await mock(page, { update_preference: disabled, tool_updates: [
+            { tool: "adb", state: "current", current_version: "37.0.3", latest_version: "37.0.3" },
+            { tool: "scrcpy", state: "current", current_version: "5.0.1", latest_version: "v5.0.1" },
+        ] });
         await page.goto("/settings");
         const button = page.getByRole("button", { name: "Check for updates", exact: true });
         expect(requests).toEqual([]);
@@ -27,6 +30,11 @@ for (const disabled of [true, false]) {
         await expect.poll(() => requests.length).toBe(1);
         finish();
         await expect(page.getByRole("status")).toHaveText("SCRCPY+, ADB and scrcpy are up to date.");
+        await expect(page.locator('p').filter({ hasText: /^(ADB|scrcpy):/ })).toHaveCount(0);
+        if (disabled) {
+            await mkdir("../artifacts", { recursive: true });
+            await page.screenshot({ path: "../artifacts/update-settings-current-preview.png", fullPage: true, animations: "disabled" });
+        }
         await expect(button).toBeEnabled();
         expect(requests).toEqual([releases_url]);
         expect(await page.evaluate(() => localStorage.getItem("setting.disable_update_check"))).toBe(String(disabled));

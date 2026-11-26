@@ -62,6 +62,22 @@ device labels/grouping, and full child-process cancellation as backlog work.
 Later checkpoints below record the implemented additions and their distinct
 source, simulated, and live verification limits.
 
+## Compact update results — November 26, 2026
+
+Settings now shows version numbers only for components with an available update.
+Current components are omitted, leaving only the existing short up-to-date
+message when everything is current. Failed or unknown checks retain their
+status/recovery controls without version numbers. The shared update banner uses
+the same presentation, and a successfully installed component disappears from
+the version list immediately. Checking, installation, and saved preferences
+are unchanged.
+
+All 14 focused update UI checks passed, including automatic checking on/off,
+mixed available/current results, failed sources, installation completion, and
+the existing English/Italian/Japanese layout checks. Offscreen screenshots of
+current and available Settings results were visually reviewed; the isolated
+test server closed afterward. No owner desktop or phone operation was needed.
+
 ## Faster native unlock and verified timing — November 26, 2026
 
 The next preview embeds a small, original read-only Android diagnostic JAR.

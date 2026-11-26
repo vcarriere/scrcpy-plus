@@ -27,10 +27,10 @@
                 </button>
             </template>
 
-            <div v-if="updates.tools?.length && updates.state !== 'checking'" class="space-y-3 w-full min-w-0">
-                <div v-for="tool in updates.tools" :key="tool.tool" class="flex flex-wrap items-center justify-between gap-2">
+            <div v-if="visible_tools.length && updates.state !== 'checking'" class="space-y-3 w-full min-w-0">
+                <div v-for="tool in visible_tools" :key="tool.tool" class="flex flex-wrap items-center justify-between gap-2">
                     <div class="min-w-0 break-words">
-                        <p class="text-white">{{ tool.tool === 'adb' ? 'ADB' : 'scrcpy' }}: {{ tool.current_version || $t('version_unavailable') }}<span v-if="tool.latest_version"> → {{ tool.latest_version }}</span></p>
+                        <p class="text-white">{{ tool.tool === 'adb' ? 'ADB' : 'scrcpy' }}<span v-if="tool.state === 'available'">: {{ tool.current_version || $t('version_unavailable') }}<span v-if="tool.latest_version"> → {{ tool.latest_version }}</span></span></p>
                         <p>{{ $t(`tool_update_${tool.state}`) }}</p>
                         <p v-if="tool.install_state">{{ install_message(tool.install_state) }}</p>
                     </div>
@@ -50,6 +50,11 @@ export default {
     props: { manual: Boolean },
     setup() {
         return useAppUpdates();
+    },
+    computed: {
+        visible_tools() {
+            return this.updates.tools?.filter(tool => tool.state !== "current") || [];
+        }
     },
     methods: {
         install_message(state) {
