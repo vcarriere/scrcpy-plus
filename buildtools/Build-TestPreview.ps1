@@ -211,6 +211,12 @@ and password helper are not replaced or imported.
     Reduced motion keeps a static indicator. Startup progress does not remove
     password safeguards or establish a faster live-phone unlock time.
 
+25. Password replay removes the previous fixed80ms character pause and one
+    duplicate preparation snapshot. All per-character/pre-Enter guards remain.
+    This is a limited improvement: the costly full diagnostic check still runs
+    before each character. Read-only component timings do not prove full unlock
+    speed or password replay acceptance. The earlier helper is unchanged.
+
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI
 restart or manual Resume action is needed. The status check does not start or

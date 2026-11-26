@@ -62,6 +62,49 @@ device labels/grouping, and full child-process cancellation as backlog work.
 Later checkpoints below record the implemented additions and their distinct
 source, simulated, and live verification limits.
 
+## Password-entry timing checkpoint — November 26, 2026
+
+The owner identified the password stage as much slower than the previous helper.
+Source inspection found that the earlier `New-PasswordInputScript` runs a guarded
+loop within one phone-side shell session, checking window policy, display focus,
+and the current password editor. The native loop starts a fresh diagnostic ADB
+command per character and checks six services, plus identity/user information
+before and after each snapshot. Both versions included an 80 ms character pause.
+Only helper source was inspected; its saved credential was not read or migrated.
+
+A read-only probe targeted the connected Pixel 7 Pro's existing ADB transport and
+running server executable. It sent no input, power, lock, connection, or server
+lifecycle commands and accessed no credential record. Three-trial medians were:
+full native snapshot **778.6 ms** (716.1–808.0 ms); equivalent old-helper three
+service queries **134.0 ms**; empty ADB round trip **65.8 ms**; repeated identity/
+user queries **285.2 ms**. The three-service sample excludes the old helper's
+parsing, input delivery, waits, and full unlock lifecycle. These are component
+measurements in the phone's existing state, not a timed password replay or an
+end-to-end speed ratio. Scripts/statistics remain locally under
+`artifacts/Measure-UnlockDiagnostics.ps1` and
+`artifacts/unlock-diagnostic-benchmark.json`; no raw diagnostics were saved.
+
+Two bounded fixes remove unnecessary work: the unconditional 80 ms pause after
+each character, and a discarded duplicate Android snapshot in `prepare_editor`.
+Host cancellation/enrollment-generation validation is retained before preparation,
+as is its authoritative device snapshot. Complete per-character and pre-Enter
+guards, post-submit verification, and persistent attempt blocking remain intact.
+The expected savings are 80 ms per character plus one full preparation snapshot;
+an actual before/after credential replay has not been performed. The dominant
+per-character snapshot cost remains, so this is not a full startup-speed fix.
+
+Whole-password INJECT_TEXT batching was considered but not used: the pinned
+[scrcpy controller](https://github.com/Genymobile/scrcpy/blob/v5.0.1/server/src/main/java/com/genymobile/scrcpy/control/Controller.java)
+injects characters asynchronously, so a whole-string send is not an atomic,
+editor-bound operation equivalent to intervening guards. A larger optimization
+needs measured diagnostic/guard transport work without losing current safety.
+
+Verification: **141 native tests passed**, with 21 environment/opt-in tests ignored.
+Focus changes were tested at every character boundary and immediately before
+submission; cancellation after input remains blocked without submission. The
+frontend and command contracts are unchanged from v20's verified UI. Preview v21
+is the packaging target for these limited improvements.
+
 ## Startup progress checkpoint — November 26, 2026
 
 Start SCRCPY now immediately opens a themed progress panel with a rotating ring

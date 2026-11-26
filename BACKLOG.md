@@ -219,6 +219,16 @@ a fingerprint prompt, and an app's authentication prompt is not device unlock.
       screen restoration, and opening video. Show manual-recovery instructions
       in the same panel without a waiting spinner. Keep progress available across
       navigation; distinguish a running child from confirmed video readiness.
+- [x] Investigate password-entry slowness against the earlier helper. Read-only
+      Pixel measurements found a 778.6 ms median full snapshot before each
+      character versus 134.0 ms for the earlier helper's three service queries
+      (component-only comparison). Remove the unnecessary 80 ms typing pause
+      and one duplicate preparation snapshot while preserving all input guards.
+- [ ] Reduce the dominant per-character diagnostic cost further without losing
+      current identity/user/editor/panel checks, cancellation, or failure blocking.
+      Compare guarded diagnostic transport options, then perform an authorized
+      before/after native password replay. Do not treat whole-string asynchronous
+      input as atomic or claim the small fixes restore the previous helper's speed.
 - [x] Use one method-aware layout and backend separation for configuration,
       enrollment, privacy, monitoring, and recovery. Detection and the enrolled
       type remain distinct; detecting a different method never converts a saved

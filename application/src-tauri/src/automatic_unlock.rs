@@ -180,7 +180,6 @@ fn replay(device: &mut impl Replay) -> Result<Outcome, String> {
         for character in password.value.bytes() {
             if !ready(&device.observe()?, Some(&focus)) { return Ok(false); }
             device.character(character)?;
-            if !device.wait(80) { return Ok(false); }
         }
         if !ready(&device.observe()?, Some(&focus)) { return Ok(false); }
         device.key(66)?;
@@ -205,6 +204,15 @@ struct Device<'a, F: FnMut() -> bool> {
     registration: &'a Registration,
 }
 
+impl<F: FnMut() -> bool> Device<'_, F> {
+    fn validate_enrollment(&mut self) -> Result<(), String> {
+        if (self.cancelled)() { return Err("Unlock cancelled.".into()); }
+        let current = unlock_store::metadata(&self.target.binding)?.ok_or("The saved credential is unavailable.")?;
+        if current.generation != self.metadata.generation || !current.enabled { return Err("The enrolled credential changed.".into()); }
+        Ok(())
+    }
+}
+
 fn prepare_password_view(target: &Target, alternate: bool, cancelled: &mut impl FnMut() -> bool) -> Result<(), String> {
     let snapshot = unlock_detection::snapshot(target, cancelled)?;
     if snapshot.unlocked { return Ok(()); }
@@ -227,9 +235,7 @@ fn prepare_password_view(target: &Target, alternate: bool, cancelled: &mut impl 
 
 impl<F: FnMut() -> bool> Replay for Device<'_, F> {
     fn observe(&mut self) -> Result<Snapshot, String> {
-        if (self.cancelled)() { return Err("Unlock cancelled.".into()); }
-        let current = unlock_store::metadata(&self.target.binding)?.ok_or("The saved credential is unavailable.")?;
-        if current.generation != self.metadata.generation || !current.enabled { return Err("The enrolled credential changed.".into()); }
+        self.validate_enrollment()?;
         unlock_detection::snapshot(self.target, self.cancelled)
     }
     fn power_off(&mut self) -> Result<(), String> {
@@ -257,7 +263,7 @@ impl<F: FnMut() -> bool> Replay for Device<'_, F> {
         self.monitor.channel.key(67)
     }
     fn prepare_editor(&mut self, alternate: bool) -> Result<(), String> {
-        let _ = self.observe()?;
+        self.validate_enrollment()?;
         prepare_password_view(self.target, alternate, self.cancelled)
     }
     fn mark(&mut self, blocked: bool) -> Result<(), String> {
@@ -446,6 +452,7 @@ mod tests {
     }
     impl Replay for Fake {
         fn observe(&mut self) -> Result<Snapshot, String> {
+            if self.cancel_after_input && self.events.contains(&"character") { return Err("Unlock cancelled.".into()); }
             self.count += 1;
             let mut value = self.observations.pop_front().unwrap_or_else(snapshot);
             if self.change_after.is_some_and(|after| self.count > after) { value.focus = Some("different window".into()); }
@@ -483,12 +490,14 @@ mod tests {
     }
 
     #[test]
-    fn changed_editor_after_partial_entry_prevents_submission_and_retry() {
-        let mut fake = Fake { change_after: Some(8), ..Fake::default() };
-        assert_eq!(replay(&mut fake).unwrap(), Outcome::Blocked);
-        assert!(fake.blocked);
-        assert!(fake.events.contains(&"character"));
-        assert!(!fake.events.contains(&"enter"));
+    fn changed_editor_before_each_character_or_submission_keeps_the_attempt_blocked() {
+        for delivered in 0..="synthetic".len() {
+            let mut fake = Fake { change_after: Some(6 + delivered), ..Fake::default() };
+            assert_eq!(replay(&mut fake).unwrap(), Outcome::Blocked);
+            assert!(fake.blocked);
+            assert_eq!(fake.events.iter().filter(|event| **event == "character").count(), delivered);
+            assert!(!fake.events.contains(&"enter"));
+        }
     }
 
     #[test]
