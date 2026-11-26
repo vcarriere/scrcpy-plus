@@ -96,8 +96,20 @@ recovery, hide/reopen/navigation, launch failure/retry, late IPC replies, narrow
 layout, and reduced motion. Synthetic startup/manual-recovery renders were
 inspected offscreen. No desktop, phone, ADB server, saved credential, or installed
 application was operated for these checks. Live startup timing/native password
-acceptance remains separate from these results. Preview v20 is the packaging
-target for this change.
+acceptance remains separate from these results. The seven startup UI cases were
+rechecked after the final relock, progress-query failure, and screen-state wording
+changes, and passed.
+
+Preview v20 was built from clean commit
+`26deaabae91f04b136c003d849e6a19e7e5eaba5` at
+`artifacts/adb-controls-preview-v20/Start Test Build.cmd`. All 18 manifest hashes
+matched; the executable is an x64 Windows GUI (`0x8664`, subsystem 2), using
+`me.vcarriere.scrcpy-plus.preview`. Executable SHA-256:
+`69060b3b7462188c6742ca48789f2dd90eda35cf50aabbfa9016e6519c20c28e`.
+Packaging did not launch it or replace the installed app. Test browser contexts
+and the local test listener were closed. Backlog 19 separately records the
+owner's proposed embedded mirror/overlay wrapper and the bounded feasibility
+review; no wrapper implementation or benchmark was performed.
 
 ## Component update checkpoint — November 26, 2026
 
