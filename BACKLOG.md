@@ -106,21 +106,60 @@ Source starting points: `application/src-tauri/src/downloader.rs`,
 Priority: next, after reliable session ownership (item 06). Feasibility: existing
 local helper provides a reference; the generalized native implementation is new.
 
+Agreed delivery order: finish shared session ownership (06); add read-only method
+detection; build per-device enrollment and protected storage; implement guarded
+password replay together with privacy and coordinated screen power; verify
+synthetic regressions and scoped device parity; then offer optional migration.
+Keep PIN support and item 04's pattern adapter as later method-specific work.
+These are planned native features, not capabilities already shipped in the fork.
+
+Detection feasibility confirmed from Android source on November 25, 2026:
+recent AOSP `LockSettingsService` diagnostics report each Android user's
+`CredentialType` through `adb shell dumpsys lock_settings`. The reported types
+are `PIN`, `PASSWORD`, `PATTERN`, and `NONE`; no credential value is recovered.
+The AOSP shell has the required diagnostic permission, so this approach does not
+require root on supported builds with authorized ADB. See
+[Android 16 lock-settings diagnostics](https://android.googlesource.com/platform/frameworks/base/+/android16-release/services/core/java/com/android/server/locksettings/LockSettingsService.java#3485),
+[credential type definitions](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/core/java/com/android/internal/widget/LockPatternUtils.java#119),
+and [shell diagnostic permission](https://android.googlesource.com/platform/frameworks/base/+/refs/heads/main/packages/Shell/AndroidManifest.xml#168).
+This confirms a concrete detection path, not universal manufacturer/version
+compatibility or a test on the owner's Pixel. Configured credential type and the
+currently visible challenge are separate: a password-configured phone can still
+be showing a fingerprint prompt, and an app's authentication prompt is not the
+device's unlock screen. Keep these separate in both the backend and UI.
+
 - [ ] Move session startup unlock and active-session re-unlock into the native
       backend, with an opt-in per-device setting and password enrollment UI.
+      Include credential confirmation, replacement/removal, disabled, monitoring,
+      preparing, unlocking, waiting for manual unlock, and unavailable states.
+      Explain that opting in also re-unlocks a deliberate lock while an owned
+      controllable session is active. Do not install a global/startup unlock
+      service or prevent the phone from locking outside that session.
 - [ ] Design the visuals around **Automatic unlock** and an unlock-method model,
       with reusable enrollment, status, privacy, and recovery areas. Allow future
       password, PIN, pattern/gesture, and on-phone biometric/manual flows without
       redesigning the whole section. Use method-specific enrollment controls and
       expose only implemented choices; keep phone unlock separate from in-app
       login or reauthentication contexts.
-- [ ] Allow space in that design for future method detection. Show the detected
-      method separately from the enrolled credential type, with clear unknown or
-      unsupported states. Investigate reliable current-editor/device signals;
-      require explicit selection when ambiguous and never submit a password to a
-      different entry method. Detection alone must not authorize credential input.
+- [ ] Implement the source-confirmed, read-only configured-method detector for
+      the selected device and verified current Android user. Parse only that
+      user's credential type from bounded diagnostics; do not retain or log the
+      complete dump. Recheck on connection, user changes, enrollment, and before
+      an attempt. Treat missing, denied, malformed, duplicate, unknown, or stale
+      results as unknown, never as `NONE` or permission to try another method.
+      Distinguish no secure credential from an explicitly disabled lock screen
+      only when the required additional state is available.
+- [ ] Show **Detected unlock method: Password / PIN / Pattern / No secure
+      credential / Unknown** separately from the enrolled credential type and
+      current prompt. Independently verify the current main-display SystemUI
+      entry surface. A configured type alone cannot prove the visible editor is
+      ready, authorize input, or select a different saved credential. Explicit
+      method selection may assist setup on unsupported devices but cannot bypass
+      input guards. Stop automatic input on ambiguity, type changes, or mismatch;
+      require explicit re-enrollment when the enrolled method changes.
       Fingerprint/face prompts represent completion on the phone, not replayable
-      biometric credentials or a bypass.
+      biometric credentials or a bypass; keep them distinct from PIN/password/
+      pattern fallback and in-app authentication.
 - [ ] Keep credentials in OS-protected storage. Never put them in source,
       ordinary settings/localStorage, command-line arguments, diagnostics, or
       exported profiles. Keep decryption and injection in the native backend;
@@ -146,15 +185,34 @@ local helper provides a reference; the generalized native implementation is new.
       guarantee is required, with any companion-app requirement made explicit.
 - [ ] Port the existing helper's guards: check lock state on the main display,
       current Android user, focused SystemUI window, and active password editor;
-      do not mistake the fingerprint panel for a password field. Recheck before
-      input, during typing, and before submission.
+      require Android to be boot-ready and logically awake, and reject SIM locks,
+      unsupported user/profile states, and occluded entry surfaces. Select
+      display 0 explicitly, reject cached/history editors, and require the same
+      current owner, editor client/display, input type, and focused password
+      window. Do not mistake the fingerprint panel for a password field. Recheck
+      identity and these guards before input, during typing, and before submission.
 - [ ] Skip credential retrieval and input when already unlocked. Disable automatic
       authentication for view-only/no-control, OTG, ambiguous devices, unrelated
       displays, and unsupported lock screens.
 - [ ] Preserve the distinction between retryable failures before input and an
-      uncertain/partial credential attempt. Persist the latter block across
-      restarts; clear it only after verified manual unlock. Offer a visible
-      manual-unlock prompt without repeatedly submitting a password.
+      uncertain/partial credential attempt. Persist an in-flight attempt marker
+      before the first character; clear it after verified successful unlock or
+      an explicitly established zero-input abort. Persist any remaining uncertain
+      attempt block across restarts; clear that block only after verified awake,
+      manually unlocked state for the same device/user. Offer a visible
+      manual-unlock prompt once per block without repeatedly submitting a
+      password. Keep observing so manual recovery resumes the active monitor.
+- [ ] Recover only proven pre-input/transient failures with bounded backoff
+      (the helper uses 5, 10, 20, then at most 30 seconds). Revalidate identity
+      after reconnect and stop authentication if credentials are missing. Retry
+      screen-off restoration independently from authentication; a failed power
+      operation must never cause the password to be submitted again.
+- [ ] Keep credential delivery out of process arguments and shell interpolation;
+      use a native data/control channel with supported character encoding. Verify
+      unlock from current device/user state. Record bounded, fixed diagnostic
+      codes for preparation, submission, and verification rather than sensitive
+      command output. If narrowly scoped Android verification evidence is used,
+      missing or inconclusive log entries must not authorize another attempt.
 - [ ] Tie monitoring and in-flight input to the actual session lifetime. Serialize
       attempts across concurrent sessions; closing the session must stop its
       automation. Coordinate screen power with item 05.
@@ -191,6 +249,16 @@ method-aware layout with PIN/pattern/biometric/unknown fixtures and verify that 
 method change or ambiguous detection stops input and cannot choose another saved
 credential automatically.
 
+Detection acceptance: cover each reported type, no-secure-credential versus
+disabled-lock state, multiple Android users/work profiles, an absent or denied
+diagnostic service, output changes/truncation, duplicate entries, reconnects, and
+configured type versus current prompt mismatches. Verify setup while already
+unlocked performs no credential input. Test actual supported Pixel/Android and
+other manufacturer/version combinations before claiming compatibility; cold
+boot, USB replug, wireless reconnect, session closure during input, and manual
+recovery still require scoped native parity checks. Do not use a password
+verification command or a credential attempt merely to discover the method.
+
 Security scope: apply established OS/cryptographic protections rather than custom
 encryption. Local files can still be modified or deleted; the requirement is to
 detect and reject unauthorized changes, not claim immutability. Current-user
@@ -212,8 +280,10 @@ and lock-screen recognition need a prototype.
       enrollment grid, confirmation, reset, and protected storage.
 - [ ] Fit the pattern grid into item 03's shared unlock-method design and reuse
       its replay privacy/input guards. Hide the traced pattern during replay;
-      future method detection must distinguish pattern entry from password/PIN
-      fields and on-phone biometric prompts before any gesture is injected.
+      use item 03's configured-method detector together with an independently
+      verified pattern entry surface to distinguish it from password/PIN fields
+      and on-phone biometric prompts before any gesture is injected. A reported
+      `PATTERN` type alone must not authorize a gesture.
 - [ ] Submit one continuous touch gesture: down, movement through the selected
       dots, then up. Separate taps or independent swipes are insufficient.
 - [ ] Validate Android's intermediate-dot rules, timing, touch cancellation,
