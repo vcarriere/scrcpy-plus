@@ -26,7 +26,7 @@ function Get-VerifiedTool($tool, [string]$destination) {
     $client = [Net.Http.HttpClient]::new()
     $cancellation = [Threading.CancellationTokenSource]::new([TimeSpan]::FromMinutes(4))
     $response = $null
-    $input = $null
+    $download_stream = $null
     $output = $null
     try {
         $client.Timeout = [TimeSpan]::FromMinutes(4)
@@ -38,11 +38,11 @@ function Get-VerifiedTool($tool, [string]$destination) {
         if ($response.Content.Headers.ContentLength -gt $tool.maxBytes) {
             throw 'Oversized build-tool download.'
         }
-        $input = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+        $download_stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
         $output = [IO.File]::Open($temporary, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
         $buffer = [byte[]]::new(1048576)
         $total = 0L
-        while (($read = $input.ReadAsync($buffer, 0, $buffer.Length, $cancellation.Token).GetAwaiter().GetResult()) -ne 0) {
+        while (($read = $download_stream.ReadAsync($buffer, 0, $buffer.Length, $cancellation.Token).GetAwaiter().GetResult()) -ne 0) {
             $total += $read
             if ($total -gt $tool.maxBytes) { throw 'Oversized build-tool download.' }
             $output.Write($buffer, 0, $read)
@@ -56,7 +56,7 @@ function Get-VerifiedTool($tool, [string]$destination) {
         [IO.File]::Move($temporary, $destination)
     } finally {
         if ($output) { $output.Dispose() }
-        if ($input) { $input.Dispose() }
+        if ($download_stream) { $download_stream.Dispose() }
         if ($response) { $response.Dispose() }
         $cancellation.Dispose()
         $client.Dispose()

@@ -41,9 +41,9 @@ $tests = Join-Path $buildRoot 'tests'
 $source = Join-Path $PSScriptRoot 'src\com\scrcpyplus\unlockguard\Main.java'
 $sources = @(Get-ChildItem -LiteralPath (Join-Path $PSScriptRoot 'src') -Recurse -File -Filter '*.java' | Sort-Object FullName)
 $profileClass = if ($Mode -eq 'PowerProto') { 'MainPowerProfile' } else { 'MainProfile' }
-$profile = Join-Path $PSScriptRoot ('profile\com\scrcpyplus\unlockguard\' + $profileClass + '.java')
+$profile_source = Join-Path $PSScriptRoot ('profile\com\scrcpyplus\unlockguard\' + $profileClass + '.java')
 $generatedProfile = Join-Path $buildRoot ($profileClass + '.java')
-$profileText = [IO.File]::ReadAllText($profile)
+$profileText = [IO.File]::ReadAllText($profile_source)
 if (-not $profileText.Contains('static final int TRIALS = 5;')) { throw 'Unexpected profile trial declaration.' }
 $profileText = $profileText.Replace('static final int TRIALS = 5;', ('static final int TRIALS = ' + $Trials + ';'))
 [IO.File]::WriteAllText($generatedProfile, $profileText, [Text.UTF8Encoding]::new($false))
