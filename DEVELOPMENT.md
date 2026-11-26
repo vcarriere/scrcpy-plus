@@ -118,6 +118,13 @@ frontend and command contracts are unchanged from v20's verified UI. Preview v21
 was an intermediate local artifact for the first two changes; v22 packages all
 three limited improvements. No live credential replay was performed.
 
+V22 was built from clean commit `f4ca487dad47eb180516f5dcdcfeea01eb633cb8` at
+`artifacts/adb-controls-preview-v22/Start Test Build.cmd`. All 18 manifest hashes
+matched. Its executable is an x64 Windows GUI (`0x8664`, subsystem 2), using the
+separate `me.vcarriere.scrcpy-plus.preview` profile. Executable SHA-256:
+`0fbd0ddd6d27e9fd26af5109652359cbba6fead99c66cf461729118fb47a5415`.
+Packaging did not launch it or replace the installed application/helper.
+
 ## Startup progress checkpoint — November 26, 2026
 
 Start SCRCPY now immediately opens a themed progress panel with a rotating ring
