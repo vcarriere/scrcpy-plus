@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{ Arc, Mutex };
 use crate::{ adb_server, device_inventory::{ self, Selection }, screen_power::{ self, AdbClient, Panel }, system_command, unlock_store::Binding };
 
 const IDENTITY_QUERY: &str = "getprop ro.serialno; getprop ro.product.manufacturer; getprop ro.product.device; cmd activity get-current-user; getprop ro.build.version.sdk";
@@ -10,47 +11,49 @@ const METHOD_QUERY: &str = r#"dumpsys lock_settings | awk '
 
 // Keep only current state fields. In particular, never return input history,
 // cached editors, surrounding text, or the complete lock-settings dump.
+// Fixed framing labels contain no options or escapes. The shell's builtin echo
+// avoids starting ten external formatter processes for every snapshot.
 const SNAPSHOT_QUERY: &str = r#"
-printf '@@identity\n'
+echo '@@identity'
 getprop ro.serialno
 getprop ro.product.manufacturer
 getprop ro.product.device
 cmd activity get-current-user
 getprop ro.build.version.sdk
-printf '@@boot\n'
+echo '@@boot'
 getprop sys.boot_completed
-printf '@@policy\n'
+echo '@@policy'
 dumpsys window policy | awk '
     /^[[:space:]]*KeyguardServiceDelegate[[:space:]]*$/ { active=1; print; next }
     /^[[:space:]]*Looper state:/ { active=0 }
     active && /^[[:space:]]*(showing|inputRestricted|userId|simSecure|occluded|bootCompleted|interactiveState)=/ { print }
 '
-printf '@@displays\n'
+echo '@@displays'
 dumpsys window displays | grep -E 'Display: mDisplayId=|mCurrentFocus='
-printf '@@ime\n'
+echo '@@ime'
 dumpsys input_method | sed -n -e '/^  mCurrentImeUserId=/p' -e '/^  mUserDataRepository:$/,/^  [^ ]/p' | awk '
     /^  mCurrentImeUserId=/ || /^  mUserDataRepository:$/ || /^    userId=/ || /^      curClient=/ || /^      curEditorInfo:$/ || /^        inputType=/ || /^        packageName=/ { print; next }
     /^      [^ ]/ { print "      endEditor" }
 '
-printf '@@method\n'
+echo '@@method'
 dumpsys lock_settings | awk '
     /^User State:$/ { active=1; print; next }
     active && /^[^[:space:]]/ { active=0 }
     active && /^[[:space:]]+(User|CredentialType:|IsLockScreenDisabled:)/ { print }
 '
-printf '@@power\n'
+echo '@@power'
 # Display-group diagnostics also contain a numeric mWakefulness. Only the main
 # symbolic field establishes the device's logical wakefulness.
 dumpsys power | grep '^  mWakefulness=[A-Za-z]*$'
-printf '@@panel\n'
+echo '@@panel'
 dumpsys SurfaceFlinger --displays | grep -E '^[[:space:]]*((Virtual )?Display [0-9]|powerMode=)'
-printf '@@identity_end\n'
+echo '@@identity_end'
 getprop ro.serialno
 getprop ro.product.manufacturer
 getprop ro.product.device
 cmd activity get-current-user
 getprop ro.build.version.sdk
-printf '@@end\n'
+echo '@@end'
 "#;
 
 #[derive(Clone)]
@@ -60,6 +63,7 @@ pub struct Target {
     pub binding: Binding,
     pub hardware_serial: String,
     pub sdk: u32,
+    diagnostics: Option<Arc<Mutex<crate::unlock_guard::Session>>>,
 }
 
 pub struct Snapshot {
@@ -89,7 +93,7 @@ pub fn target(selection: &Selection) -> Result<Target, String> {
     let output = client.query(&["-t", &transport, "shell", IDENTITY_QUERY], &mut || false, false)?;
     let (current, hardware_serial, user, sdk) = identity(&output).ok_or("The phone's identity and current Android user could not be verified.")?;
     if &current != expected { return Err("The selected device identity changed. No credential was retrieved.".into()); }
-    Ok(Target { selection: selection.clone(), client, binding: Binding { identity: current, user }, hardware_serial, sdk })
+    Ok(Target { selection: selection.clone(), client, binding: Binding { identity: current, user }, hardware_serial, sdk, diagnostics: None })
 }
 
 pub fn query(target: &Target, script: &str, cancelled: &mut impl FnMut() -> bool) -> Result<String, String> {
@@ -251,19 +255,87 @@ fn parse_snapshot(target: &Target, output: &str) -> Result<Snapshot, String> {
 }
 
 pub fn snapshot(target: &Target, cancelled: &mut impl FnMut() -> bool) -> Result<Snapshot, String> {
-    parse_snapshot(target, &query(target, SNAPSHOT_QUERY, cancelled)?)
+    let output = match &target.diagnostics {
+        Some(session) => session.lock().map_err(|_| "The private unlock-state channel stopped.")?.snapshot(cancelled)?,
+        None => query(target, SNAPSHOT_QUERY, cancelled)?,
+    };
+    parse_snapshot(target, &output)
+}
+
+pub fn start_diagnostics(target: &mut Target, cancelled: &mut impl FnMut() -> bool) -> Result<(), String> {
+    let mut session = crate::unlock_guard::Session::start(target, cancelled).map_err(|_| "The private unlock-state helper could not be prepared.")?;
+    // Probe before selecting this backend or retrieving any credential. Every
+    // subsequent observation uses this same channel and the same native parser;
+    // a failed selected channel never falls back during password replay.
+    let output = session.snapshot(cancelled)?;
+    parse_snapshot(target, &output)?;
+    target.diagnostics = Some(Arc::new(Mutex::new(session)));
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    #[test]
+    #[ignore = "Read-only Pixel diagnostic benchmark; requires explicitly selected existing ADB server and transport, never reads credentials or sends input"]
+    fn live_snapshot_timing_without_input() {
+        use std::time::Instant;
+        let path = std::env::var("SCRCPY_PLUS_TEST_ADB").expect("Select the existing ADB executable explicitly.");
+        let transport = std::env::var("SCRCPY_PLUS_TEST_TRANSPORT").expect("Select the connected Pixel transport explicitly.");
+        let socket = "tcp:localhost:5037".to_string();
+        assert!(adb_server::version(&socket).unwrap().is_some(), "The existing server must already be running.");
+        let client = AdbClient { path: path.clone(), socket: socket.clone() };
+        let output = client.query(&["-t", &transport, "shell", IDENTITY_QUERY], &mut || false, false).unwrap();
+        let (id, hardware_serial, user, sdk) = identity(&output).expect("The selected transport must return a valid identity.");
+        let mut target = Target {
+            selection: Selection { serial: "read-only-benchmark".into(), transport_id: Some(transport.parse().unwrap()), identity: Some(id.clone()), adb_path: path, server_socket: socket },
+            client, binding: Binding { identity: id, user }, hardware_serial, sdk, diagnostics: None,
+        };
+        let mut external_query = SNAPSHOT_QUERY.to_string();
+        for name in ["identity", "boot", "policy", "displays", "ime", "method", "power", "panel", "identity_end", "end"] {
+            let marker = format!("echo '@@{}'", name);
+            assert_eq!(external_query.matches(&marker).count(), 1, "Each benchmark marker must be present exactly once.");
+            external_query = external_query.replace(&marker, &format!("printf '@@{}\\n'", name));
+        }
+        let mut external = Vec::new();
+        let mut builtin = Vec::new();
+        for trial in 0..5 {
+            for fast in if trial % 2 == 0 { [false, true] } else { [true, false] } {
+                let started = Instant::now();
+                let output = query(&target, if fast { SNAPSHOT_QUERY } else { &external_query }, &mut || false).unwrap();
+                let state = parse_snapshot(&target, &output).expect("Every timed response must pass the native identity and state parser.");
+                assert!(state.method == "password" && state.panel.is_some() && (state.safe_locked || state.unlocked), "Every measured response must contain a recognized complete device state; no input was sent.");
+                if fast { builtin.push(started.elapsed().as_millis()); } else { external.push(started.elapsed().as_millis()); }
+            }
+        }
+        let mut external_sorted = external.clone(); external_sorted.sort();
+        let mut builtin_sorted = builtin.clone(); builtin_sorted.sort();
+        println!("Validated native diagnostic comparison: external_markers_ms={:?}, external_markers_median_ms={}, builtin_markers_ms={:?}, builtin_markers_median_ms={}, credential_access=false, input_sent=false", external, external_sorted[2], builtin, builtin_sorted[2]);
+        let started = Instant::now();
+        start_diagnostics(&mut target, &mut || false).expect("The new backend must activate and pass native identity/state parsing.");
+        let startup = started.elapsed().as_millis();
+        let mut helper = Vec::new();
+        let mut legacy = Vec::new();
+        for trial in 0..5 {
+            for fast in if trial % 2 == 0 { [false, true] } else { [true, false] } {
+                let started = Instant::now();
+                let state = if fast { snapshot(&target, &mut || false).unwrap() } else { parse_snapshot(&target, &query(&target, SNAPSHOT_QUERY, &mut || false).unwrap()).unwrap() };
+                assert!(state.method == "password" && state.panel.is_some() && (state.safe_locked || state.unlocked));
+                if fast { helper.push(started.elapsed().as_millis()); } else { legacy.push(started.elapsed().as_millis()); }
+            }
+        }
+        let mut helper_sorted = helper.clone(); helper_sorted.sort();
+        let mut legacy_sorted = legacy.clone(); legacy_sorted.sort();
+        println!("Validated persistent diagnostic comparison: helper_startup_ms={}, helper_ms={:?}, helper_median_ms={}, legacy_ms={:?}, legacy_median_ms={}, credential_access=false, input_sent=false", startup, helper, helper_sorted[2], legacy, legacy_sorted[2]);
+    }
+
     fn target_fixture() -> Target {
         let id = serde_json::to_string(&["synthetic-serial", "Example", "synthetic-product"]).unwrap();
         Target {
             selection: Selection { serial: "synthetic-route".into(), transport_id: Some(7), identity: Some(id.clone()), adb_path: "synthetic-adb".into(), server_socket: "tcp:localhost:5037".into() },
             client: AdbClient { path: "synthetic-adb".into(), socket: "tcp:localhost:5037".into() },
-            binding: Binding { identity: id, user: 0 }, hardware_serial: "synthetic-serial".into(), sdk: 37,
+            binding: Binding { identity: id, user: 0 }, hardware_serial: "synthetic-serial".into(), sdk: 37, diagnostics: None,
         }
     }
 

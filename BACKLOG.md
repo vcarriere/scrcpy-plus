@@ -220,26 +220,47 @@ a fingerprint prompt, and an app's authentication prompt is not device unlock.
       in the same panel without a waiting spinner. Keep progress available across
       navigation; distinguish a running child from confirmed video readiness.
 - [x] Investigate password-entry slowness against the earlier helper. Read-only
-      Pixel measurements found a 778.6 ms median full snapshot before each
-      character versus 134.0 ms for the earlier helper's three service queries
-      (component-only comparison). Remove the unnecessary 80 ms typing pause
+      native Pixel measurements confirmed about 767 ms for a full snapshot before
+      each character. Earlier PowerShell-extracted full-snapshot figures are
+      superseded: that harness retained source CRLF and did not validate state.
+      Remove the unnecessary 80 ms typing pause
       and one duplicate preparation snapshot while preserving all input guards.
-      Use the current-user service directly instead of its shell wrapper; a
-      follow-up component probe measured 800.5 ms baseline versus 732.7 ms for
-      that full snapshot variant. These are not full password-replay timings.
-- [ ] Reduce the dominant per-character diagnostic cost further without losing
-      current identity/user/editor/panel checks, cancellation, or failure blocking.
-      Compare guarded diagnostic transport options, then perform an authorized
-      before/after native password replay. Do not treat whole-string asynchronous
-      input as atomic or claim the small fixes restore the previous helper's speed.
+      Use the current-user service directly instead of its shell wrapper.
+- [x] Reduce per-character diagnostic overhead without dropping any checks:
+      replace ten external constant-marker formatters with builtin echo. The
+      compiled native benchmark validated every response; five alternating
+      trials measured medians of 766 ms before and 509 ms after (about one-third
+      less check time). An anchored concurrent prototype measured 767/770 ms
+      and was not included in the application.
+- [x] Add a repeatable one-attempt native unlock timing check and run it on the
+      explicitly enrolled Pixel. One controlled locked/asleep start verified
+      unlock at 13.799 s from the native request; entry began at 9.233 s, submission
+      at 12.932 s, and headless video at 16.207 s. The phone returned to sleep;
+      no credential content, length, or recording was saved.
+- [x] Substantially reduce full startup using a persistent read-only Android
+      diagnostic helper, retaining the native identity/user/editor/panel guards,
+      per-character checks, cancellation, and failure blocking. Validated Pixel
+      snapshots dropped from 626 ms to 95 ms median. Fixed-prefix inventory
+      formatting dropped from 425 ms to 244 ms with byte-identical output.
+      The final guarded locked-startup run verified unlock at 5.895 s and
+      headless video at 7.108 s, versus the baseline 13.799/16.207 s (about 56%
+      less complete startup time). Entry/guard time fell from 3.699 s to 0.605 s.
+      Independent selected-backend failure never falls back during replay;
+      test helpers/JARs were cleaned up and the phone returned to sleep.
+- [ ] Broaden end-to-end timing/recovery coverage and compare the complete old
+      helper workflow. Preparation was the larger delay in the measured run.
+      Diagnostic component timings do not prove all native parity. Keep further optimization
+      behind measured results, current identity/user/editor/panel checks,
+      cancellation, and failure blocking; whole-string asynchronous input is not
+      an atomic replacement for intervening guards.
 - [x] Use one method-aware layout and backend separation for configuration,
       enrollment, privacy, monitoring, and recovery. Detection and the enrolled
       type remain distinct; detecting a different method never converts a saved
       password to a PIN/pattern or authorizes biometric replay. Persistently
       invalidate the enrolled password after an observed known method change;
       require explicit re-enrollment even if Password is subsequently restored.
-- [ ] Complete native parity on the explicitly enrolled Pixel: locked startup,
-      already-unlocked startup, sleeping/startup preparation, active-session
+- [ ] Complete the remaining native parity on the explicitly enrolled Pixel:
+      already-unlocked startup, repeated sleeping/startup preparation, active-session
       relock, fingerprint-to-password preparation, independent panel restoration,
       Stop/GUI exit during preparation/input, wireless reconnect/USB replug,
       partial transport failure, persistent block, manual recovery, and cold boot.

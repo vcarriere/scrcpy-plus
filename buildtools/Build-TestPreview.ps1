@@ -213,11 +213,19 @@ and password helper are not replaced or imported.
 
 25. Password replay removes the previous fixed 80 ms character pause and one
     duplicate preparation snapshot. All per-character/pre-Enter guards remain.
-    This is a limited improvement: the costly full diagnostic check still runs
-    before each character. Read-only component timings do not prove full unlock
-    speed or password replay acceptance. The earlier helper is unchanged.
     Current-user checks use the same Android service directly instead of its
     shell wrapper, preserving the identity/user guards.
+    V23 uses a small read-only Android helper to collect fresh state through
+    Binder without repeatedly launching shell utilities. All existing native
+    diagnostic fields and input guards remain; the helper accepts no password
+    or input command. A selected helper failure stops automatic input.
+26. The optimized controlled Pixel run verified native unlock at 5.895 seconds
+    from the startup request and headless video at 7.108 seconds, compared with
+    13.799/16.207 seconds in the baseline run. Entry/guard time fell from 3.699
+    seconds to 0.605 seconds. These are individual Wi-Fi/headless measurements,
+    not an old-helper comparison or a guarantee for every launch. The repository's
+    buildtools/Measure-UnlockStartup.ps1 supports metadata-only preflight and an
+    explicit one-attempt -RunUnlock benchmark without password arguments/logging.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI
@@ -228,7 +236,8 @@ This build tests the ADB controls, known-address discovery recovery, compact
 device labels, grouped connection paths, automatic protected-screen /
 fingerprint-prompt screen power, and the new password-only native unlock source.
 Automatic detection and component-update source work are implemented; real-device
-password acceptance remains pending. PIN/pattern replay is still on the backlog.
+password locked-startup acceptance was verified on the Pixel. Remaining recovery
+and parity cases, plus PIN/pattern replay, are still on the backlog.
 New update checks and guarded managed-tool selection have public-metadata and
 synthetic evidence; final integrated/cache acceptance is recorded separately.
 The separate profile starts with default settings and does not automatically use

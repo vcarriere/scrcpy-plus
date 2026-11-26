@@ -147,8 +147,10 @@ fn replay(device: &mut impl Replay) -> Result<Outcome, String> {
     let mut prior = None;
     let mut approved = None;
     let mut alternate_prepared = false;
-    for _ in 0..20 {
-        if !device.wait(150) { return Ok(Outcome::Deferred); }
+    for observation in 0..20 {
+        // The first observation can run immediately. Approval still requires
+        // two matching editor observations separated by the settling interval.
+        if !device.wait(if observation == 0 { 0 } else { 150 }) { return Ok(Outcome::Deferred); }
         let snapshot = device.observe()?;
         if snapshot.unlocked { return Ok(Outcome::AlreadyUnlocked); }
         if snapshot.method != "password" || !snapshot.safe_locked { return Ok(Outcome::Deferred); }
@@ -164,8 +166,6 @@ fn replay(device: &mut impl Replay) -> Result<Outcome, String> {
     let Some(focus) = approved else { return Ok(Outcome::Deferred); };
     // Clear a pre-existing partial field only on the same verified editor. This
     // happens before loading the password or claiming an input attempt.
-    if !ready(&device.observe()?, Some(&focus)) { return Ok(Outcome::Deferred); }
-    device.key(123)?;
     if !ready(&device.observe()?, Some(&focus)) { return Ok(Outcome::Deferred); }
     device.clear()?;
     if !ready(&device.observe()?, Some(&focus)) { return Ok(Outcome::Deferred); }
@@ -183,8 +183,10 @@ fn replay(device: &mut impl Replay) -> Result<Outcome, String> {
         }
         if !ready(&device.observe()?, Some(&focus)) { return Ok(false); }
         device.key(66)?;
-        for _ in 0..12 {
-            if !device.wait(350) { return Ok(false); }
+        for observation in 0..13 {
+            // A freshly verified unlock needs no artificial minimum delay.
+            // If it is not ready, retain the twelve bounded settling waits.
+            if !device.wait(if observation == 0 { 0 } else { 350 }) { return Ok(false); }
             if device.observe()?.unlocked { return Ok(true); }
         }
         Ok(false)
@@ -242,8 +244,8 @@ impl<F: FnMut() -> bool> Replay for Device<'_, F> {
         if (self.cancelled)() { return Err("Unlock cancelled.".into()); }
         self.monitor.channel.power(false)?;
         if !self.wait(300) { return Err("Unlock cancelled.".into()); }
-        let snapshot = self.observe()?;
-        if snapshot.panel != Some(Panel::Off) || !snapshot.awake { return Err("Private display-off state could not be verified.".into()); }
+        // The immediately following prepare_password_view verifies the full
+        // awake, locked, password, and panel-off state before any editor input.
         Ok(())
     }
     fn key(&mut self, key: u32) -> Result<(), String> {
@@ -307,8 +309,15 @@ pub fn run(executable: &str, args: Vec<&str>, target: Target, automatic_screen: 
     validate_args(&args)?;
     let registration = Registration::managed(&target.selection.serial, &target.binding.identity, automatic_screen)?;
     let _lease = unlock_store::attempt_lock(&target.binding)?;
+    // Drop the diagnostic connection before releasing the phone's attempt lease.
+    let mut target = target;
     crate::launch_progress::update("preparing", "preparing_screen_control");
     let mut monitor = Monitor::new_pinned(executable, &args, &target)?;
+    let mut cancelled = || screen_power::shutting_down() || registration.control.load(Ordering::SeqCst) == 3;
+    let diagnostics = unlock_detection::start_diagnostics(&mut target, &mut cancelled).is_ok();
+    #[cfg(test)]
+    if std::env::var("SCRCPY_PLUS_TEST_FAST_DIAGNOSTICS").as_deref() == Ok("1") { assert!(diagnostics, "The real unlock benchmark requires the new diagnostic backend; fallback cannot count as a speed result."); }
+    let _ = diagnostics;
     let mut mirror = Mirror(None);
     let mut next_unlock = Instant::now();
     let mut next_power = Instant::now();
@@ -414,6 +423,7 @@ pub fn run(executable: &str, args: Vec<&str>, target: Target, automatic_screen: 
             })().unwrap_or(false);
             if restored {
                 pending_power = false; monitor.reset_after_unlock(); registration.unlock("monitoring", "unlock_verified");
+                next_unlock = Instant::now() + Duration::from_secs(5);
                 crate::launch_progress::unlocked();
             }
             else if pending_power {
@@ -446,9 +456,9 @@ mod tests {
             focus: Some("synthetic password window".into()), alternate: false, panel: Some(Panel::Off) }
     }
 
-    struct Fake { observations: VecDeque<Snapshot>, events: Vec<&'static str>, blocked: bool, fail_write: bool, count: usize, change_after: Option<usize>, success: bool, missing: bool, cancel_after_input: bool }
+    struct Fake { observations: VecDeque<Snapshot>, events: Vec<&'static str>, waits: Vec<u64>, blocked: bool, fail_write: bool, count: usize, change_after: Option<usize>, success: bool, missing: bool, cancel_after_input: bool }
     impl Default for Fake {
-        fn default() -> Self { Self { observations: VecDeque::new(), events: Vec::new(), blocked: false, fail_write: false, count: 0, change_after: None, success: false, missing: false, cancel_after_input: false } }
+        fn default() -> Self { Self { observations: VecDeque::new(), events: Vec::new(), waits: Vec::new(), blocked: false, fail_write: false, count: 0, change_after: None, success: false, missing: false, cancel_after_input: false } }
     }
     impl Replay for Fake {
         fn observe(&mut self) -> Result<Snapshot, String> {
@@ -461,12 +471,12 @@ mod tests {
         }
         fn power_off(&mut self) -> Result<(), String> { self.events.push("private_panel"); Ok(()) }
         fn key(&mut self, key: u32) -> Result<(), String> { if key == 66 { self.events.push("enter"); } Ok(()) }
-        fn clear(&mut self) -> Result<(), String> { Ok(()) }
+        fn clear(&mut self) -> Result<(), String> { self.events.push("clear_editor"); Ok(()) }
         fn prepare_editor(&mut self, _: bool) -> Result<(), String> { self.events.push("prepare"); Ok(()) }
         fn mark(&mut self, blocked: bool) -> Result<(), String> { self.blocked = blocked; self.events.push(if blocked { "block" } else { "clear" }); Ok(()) }
         fn password(&mut self) -> Result<Secret, String> { self.events.push("secret"); if self.missing { Err("secret unavailable".into()) } else { Ok(Secret { value: "synthetic".into() }) } }
         fn character(&mut self, _: u8) -> Result<(), String> { self.events.push("character"); if self.fail_write { Err("transport uncertain".into()) } else { Ok(()) } }
-        fn wait(&mut self, _: u64) -> bool { !self.cancel_after_input || !self.events.contains(&"character") }
+        fn wait(&mut self, milliseconds: u64) -> bool { self.waits.push(milliseconds); !self.cancel_after_input || !self.events.contains(&"character") }
     }
 
     #[test]
@@ -485,18 +495,31 @@ mod tests {
         let mut fake = Fake { fail_write: true, ..Fake::default() };
         assert_eq!(replay(&mut fake).unwrap(), Outcome::Blocked);
         assert!(fake.blocked);
-        assert_eq!(fake.events, ["private_panel", "prepare", "block", "secret", "character"]);
+        assert_eq!(fake.events, ["private_panel", "prepare", "clear_editor", "block", "secret", "character"]);
         assert!(!fake.events.contains(&"enter"));
     }
 
     #[test]
     fn changed_editor_before_each_character_or_submission_keeps_the_attempt_blocked() {
         for delivered in 0..="synthetic".len() {
-            let mut fake = Fake { change_after: Some(6 + delivered), ..Fake::default() };
+            let mut fake = Fake { change_after: Some(5 + delivered), ..Fake::default() };
             assert_eq!(replay(&mut fake).unwrap(), Outcome::Blocked);
             assert!(fake.blocked);
             assert_eq!(fake.events.iter().filter(|event| **event == "character").count(), delivered);
             assert!(!fake.events.contains(&"enter"));
+        }
+    }
+
+    #[test]
+    fn changed_editor_before_or_after_clear_prevents_secret_retrieval() {
+        for changed_at in [4, 5] {
+            let mut observations = (0..changed_at).map(|_| snapshot()).collect::<VecDeque<_>>();
+            observations.back_mut().unwrap().focus = Some("different window".into());
+            let mut fake = Fake { observations, ..Fake::default() };
+            assert_eq!(replay(&mut fake).unwrap(), Outcome::Deferred);
+            assert_eq!(fake.events.contains(&"clear_editor"), changed_at == 5);
+            assert!(!fake.events.contains(&"secret") && !fake.events.contains(&"character"));
+            assert!(!fake.blocked);
         }
     }
 
@@ -521,9 +544,11 @@ mod tests {
         assert!(!fake.blocked);
         assert_eq!(fake.events.iter().filter(|event| **event == "enter").count(), 1);
         assert_eq!(fake.events.last(), Some(&"clear"));
+        assert_eq!(fake.waits, [0, 150, 0], "Keep the stable-editor interval while accepting an immediately verified unlock.");
         let mut rejected = Fake::default();
         assert_eq!(replay(&mut rejected).unwrap(), Outcome::Blocked);
         assert!(rejected.blocked && !rejected.events.contains(&"clear"));
+        assert_eq!(rejected.waits.iter().filter(|wait| **wait == 350).count(), 12, "An unverified result retains the complete bounded settling window.");
     }
 
     #[test]
@@ -628,30 +653,90 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Read-only live benchmark preflight; reads enrollment metadata only, never the saved password or phone input"]
+    fn live_unlock_benchmark_preflight() {
+        let target = live_target();
+        let current = unlock_detection::snapshot(&target, &mut || false).unwrap();
+        let metadata = unlock_store::metadata(&target.binding).unwrap();
+        let ready = metadata.as_ref().is_some_and(|metadata| metadata.enabled && !metadata.blocked && !metadata.invalidated);
+        let lease_available = unlock_store::attempt_lock(&target.binding).is_ok();
+        println!("Unlock benchmark preflight: enrolled={}, enabled={}, blocked={}, invalidated={}, lease_available={}, safe_locked={}, awake={}, panel={:?}, sdk={}, user={}",
+            metadata.is_some(), metadata.as_ref().is_some_and(|metadata| metadata.enabled), metadata.as_ref().is_some_and(|metadata| metadata.blocked),
+            metadata.as_ref().is_some_and(|metadata| metadata.invalidated), lease_available, current.safe_locked, current.awake, current.panel, target.sdk, target.binding.user);
+        assert!(ready, "A valid locally enrolled/enabled/unblocked password is required; no secret was retrieved.");
+    }
+
+    #[test]
     #[ignore = "Requires explicit locally enrolled/enabled password and testing authorization; performs one guarded native startup unlock in a headless mirror, then restores sleep"]
     fn live_enrolled_password_startup_unlock() {
-        use std::sync::{ Arc, atomic::AtomicBool };
+        use std::sync::{ Arc, atomic::{ AtomicBool, AtomicU64 } };
         assert_eq!(std::env::var("SCRCPY_PLUS_TEST_PASSWORD").as_deref(), Ok("1"));
         assert_eq!(std::env::var("SCRCPY_PLUS_TEST_VIDEO").as_deref(), Ok("1"));
         let target = live_target();
-        let initial = unlock_detection::snapshot(&target, &mut || false).unwrap();
-        assert!(initial.safe_locked && !initial.awake && initial.method == "password", "Leave the selected Pixel locked and asleep for the controlled startup test.");
         let metadata = unlock_store::metadata(&target.binding).unwrap().expect("Enroll locally in the masked app fields first.");
         assert!(metadata.enabled && !metadata.blocked && !metadata.invalidated, "Enable the local enrollment and resolve any previous attempt block before testing.");
-        let _session = adb_server::begin(true).unwrap();
+        let _lease = unlock_store::attempt_lock(&target.binding).expect("Close the current mirror/test build before running the isolated benchmark.");
+        struct RestoreSleep { target: Target, armed: bool }
+        impl RestoreSleep {
+            fn restore(&mut self) -> Result<(), String> {
+                self.armed = false;
+                let _ = unlock_detection::snapshot(&self.target, &mut || false)?;
+                unlock_detection::query(&self.target, "input -d 0 keyevent 223", &mut || false)?;
+                if unlock_detection::snapshot(&self.target, &mut || false)?.awake { return Err("The phone did not return to sleep.".into()); }
+                Ok(())
+            }
+        }
+        impl Drop for RestoreSleep { fn drop(&mut self) { if self.armed { let _ = self.restore(); } } }
+        let mut restore = RestoreSleep { target: target.clone(), armed: true };
+        let mut initial = unlock_detection::snapshot(&target, &mut || false).unwrap();
+        if !initial.safe_locked || initial.awake {
+            unlock_detection::query(&target, "input -d 0 keyevent 223", &mut || false).unwrap();
+            let deadline = Instant::now() + Duration::from_secs(8);
+            while Instant::now() < deadline {
+                initial = unlock_detection::snapshot(&target, &mut || false).unwrap();
+                if initial.safe_locked && !initial.awake { break; }
+                std::thread::sleep(Duration::from_millis(150));
+            }
+        }
+        assert!(initial.safe_locked && !initial.awake && initial.method == "password", "The same phone must be verified locked/asleep before the single native attempt; no credential was retrieved.");
         let identity = target.binding.identity.clone();
         let finished = Arc::new(AtomicBool::new(false));
         let entered = Arc::new(AtomicBool::new(false));
         let verified = Arc::new(AtomicBool::new(false));
+        let times = Arc::new([AtomicU64::new(u64::MAX), AtomicU64::new(u64::MAX), AtomicU64::new(u64::MAX), AtomicU64::new(u64::MAX)]);
+        let launch_id = format!("unlock-benchmark-{}", std::process::id());
+        let watcher_id = launch_id.clone();
+        let watcher_times = times.clone();
+        let video_baseline = screen_power::video_samples();
+        let started = Instant::now();
         let flags = (finished.clone(), entered.clone(), verified.clone());
         let watcher = std::thread::spawn(move || {
+            struct StopSession(String);
+            impl Drop for StopSession { fn drop(&mut self) { let _ = screen_power::stop(&self.0); } }
+            let _stop = StopSession(identity.clone());
             let deadline = Instant::now() + Duration::from_secs(90);
             let mut success_at = None;
+            let mut previous_reason = String::new();
             while !flags.0.load(Ordering::SeqCst) && Instant::now() < deadline {
+                let elapsed = started.elapsed().as_millis() as u64;
+                if let Ok(Some(progress)) = crate::launch_progress::get(&watcher_id) {
+                    let progress = serde_json::to_value(progress).unwrap();
+                    if let Some(reason) = progress["reason"].as_str().filter(|reason| *reason != previous_reason) {
+                        println!("Native startup phase: {}_ms={}", reason, elapsed);
+                        previous_reason = reason.into();
+                    }
+                    for (index, reason) in [(0, "entering_password"), (1, "verifying_unlock")] {
+                        if progress["reason"] == reason { let _ = watcher_times[index].compare_exchange(u64::MAX, elapsed, Ordering::SeqCst, Ordering::SeqCst); }
+                    }
+                    if progress["video_ready"] == true { let _ = watcher_times[3].compare_exchange(u64::MAX, elapsed, Ordering::SeqCst, Ordering::SeqCst); }
+                }
                 if let Some(status) = screen_power::status_for(&identity) {
                     if status.unlock_state == Some("unlocking") { flags.1.store(true, Ordering::SeqCst); }
-                    if status.unlock_state == Some("blocked") { let _ = screen_power::stop(&identity); return; }
-                    if flags.1.load(Ordering::SeqCst) && status.unlock_state == Some("monitoring") && screen_power::video_samples() > 0 {
+                    if matches!(status.unlock_state, Some("blocked" | "unavailable" | "waiting")) { let _ = screen_power::stop(&identity); return; }
+                    if flags.1.load(Ordering::SeqCst) && status.unlock_state == Some("monitoring") && status.unlock_reason == Some("unlock_verified") {
+                        let _ = watcher_times[2].compare_exchange(u64::MAX, elapsed, Ordering::SeqCst, Ordering::SeqCst);
+                    }
+                    if watcher_times[2].load(Ordering::SeqCst) != u64::MAX && watcher_times[3].load(Ordering::SeqCst) != u64::MAX && screen_power::video_samples() > video_baseline {
                         success_at.get_or_insert(Instant::now());
                     }
                 }
@@ -664,16 +749,23 @@ mod tests {
             }
             if !flags.0.load(Ordering::SeqCst) { let _ = screen_power::stop(&identity); }
         });
-        let executable = std::env::var("SCRCPY_PLUS_TEST_SCRCPY").unwrap();
         let args = vec!["-s", target.selection.serial.as_str(), "--turn-screen-off", "--no-audio"];
-        let result = run(&executable, args, target.clone(), false);
+        let result = crate::launch_progress::run(Some(&launch_id), || {
+            crate::device_inventory::validate(&target.selection, &args)?;
+            crate::system_command::run_scrcpy(args, false, Some(&target.selection))
+        });
         finished.store(true, Ordering::SeqCst);
-        watcher.join().unwrap();
+        let watcher_result = watcher.join();
         let after = unlock_detection::snapshot(&target, &mut || false);
         let final_metadata = unlock_store::metadata(&target.binding);
         // A failed or uncertain attempt stays blocked. This restores sleep only;
         // it never clears attempt state, retrieves another secret, or retries.
-        unlock_detection::query(&target, "input -d 0 keyevent 223", &mut || false).unwrap();
+        let restored = restore.restore();
+        let observed = |index: usize| match times[index].load(Ordering::SeqCst) { u64::MAX => None, value => Some(value) };
+        println!("Native unlock benchmark: password_entry_started_ms={:?}, submit_started_ms={:?}, verified_unlocked_ms={:?}, headless_video_ready_ms={:?}, elapsed_including_video_watch_and_cleanup_ms={}, success={}, credential_output=false, recording=false",
+            observed(0), observed(1), observed(2), observed(3), started.elapsed().as_millis(), result.is_ok() && verified.load(Ordering::SeqCst));
+        watcher_result.unwrap();
+        restored.unwrap();
         result.unwrap();
         assert!(entered.load(Ordering::SeqCst), "No native password attempt was observed.");
         assert!(verified.load(Ordering::SeqCst), "Native unlock and mirror startup were not verified; do not retry automatically.");

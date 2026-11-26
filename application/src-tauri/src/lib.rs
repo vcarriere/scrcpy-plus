@@ -9,6 +9,7 @@ mod screen_power_control;
 mod device_inventory;
 mod automatic_unlock;
 mod unlock_detection;
+mod unlock_guard;
 mod unlock_store;
 mod tool_catalog;
 mod adb_installer;

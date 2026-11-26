@@ -62,7 +62,176 @@ device labels/grouping, and full child-process cancellation as backlog work.
 Later checkpoints below record the implemented additions and their distinct
 source, simulated, and live verification limits.
 
+## Faster native unlock and verified timing — November 26, 2026
+
+The next preview embeds a small, original read-only Android diagnostic JAR.
+Instead of starting shell utilities for every safety observation, one pinned
+ADB shell runs its persistent `app_process` instance. Fresh SystemProperties,
+current-user Binder calls, and six sequential filtered Binder dumps produce the
+same schema. The existing native identity/user/SDK, lock/editor/focus, main
+display, and panel parser remains authoritative. No credential or input command
+is accepted by this helper. The password remains in the existing protected
+native storage and control channel.
+
+Native requests have fresh nonces, strict bounded UTF-8 framing, cancellation,
+and a three-second deadline. Helper operations have their own 2.5-second deadline
+and bounded streaming filters. The embedded JAR is extracted with a protected
+host handle, pushed to a unique per-session path, and hash-verified before use.
+Failure before selection can use the existing serial backend without retrieving
+a secret. Once selected, a broken helper stops input; it cannot silently switch
+backends during replay. Cleanup closes only the owned process and removes only
+its scoped JAR after a passive server check and fresh phone identity check.
+
+Five alternating validated Pixel reads measured **626 ms** median for the shell
+snapshot and **95 ms** for the persistent helper, including native parsing.
+Helper setup/probe took **513 ms**. Separate inventory trials replaced only the
+fixed property-prefix formatter with builtin `echo -n`: **425 ms to 244 ms**
+medians, with byte-identical responses checked through the existing strict
+parser. Property values are still streamed unchanged. No identity cache or bulk
+property parser was introduced.
+
+Preparation also removes a discarded post-power observation (the immediately
+following preparation still validates the complete panel-off state), an
+unnecessary MoveEnd before SelectAll/Delete, and the first fixed settling wait.
+Two matching editor observations remain separated by 150 ms; guards before and
+after clearing, every character, and Enter remain. Verification can observe an
+already-completed unlock immediately, retaining twelve 350 ms settling waits
+when it is not ready. A verified screen-off restoration reschedules monitoring
+instead of immediately repeating the poll after a long replay.
+
+The final controlled Pixel 7 Pro run used the real native startup/validation
+path, enabled unblocked enrollment, a verified locked/asleep starting state,
+and one guarded password attempt. Relative to the startup request:
+
+- Private entry began at **4.706 s**, compared with the baseline **9.233 s**.
+- Enter submission began at **5.311 s**; entry/guard time was **0.605 s**, down
+  from **3.699 s** (about 84% less).
+- Same-owner unlock was verified at **5.895 s**, down from **13.799 s**.
+- First decoded headless video texture was ready at **7.108 s**, down from
+  **16.207 s** (about 56% less total startup time).
+
+An earlier helper-only run measured 6.622 s to unlock and 8.163 s to video;
+the final run includes the additional preparation/inventory improvements.
+Both passed. These are individual Wi-Fi runs using SDL's dummy/software renderer,
+not a desktop-window timing guarantee or an old-helper A/B comparison. The final
+14.343 s test duration includes intentional video observation and cleanup and
+is not the startup time. No password content/length, screen recording, or owner
+desktop capture was taken. The phone returned to verified sleep with enrollment
+unblocked. The owned mirror, host ADB clients, remote diagnostic process, and
+local/remote temporary JARs were absent afterward; shared ADB PID 44996 and the
+tablet connection were retained. The previously lingering v20 GUI was left alone.
+
+The final timings are local artifacts
+`artifacts/unlock-startup-benchmark-optimized-preparation.json` and
+`artifacts/unlock-startup-benchmark-persistent-helper.json`. The repeatable
+`buildtools/Measure-UnlockStartup.ps1` preflight and one-attempt modes both passed;
+the latter explicitly requires the fast backend, stops on uncertainty, restores
+sleep, and never clears a failed attempt block or automatically retries input.
+Full recovery/parity cases remain on the backlog.
+
+Helper source, deterministic build receipt, official pinned build tools, their
+licenses, and 36 synthetic checks are in `buildtools/unlock-guard/`. The compiler
+is stable OpenJDK 27.0.1.1 with D8 9.5.33. Java 8 bytecode is intentional:
+the first Android 17 read-only probes rejected Java 11 nestmate access when
+desugaring was disabled. The corrected build emits synthetic accessors and
+rejects non-Java-8 class files. Protocol streams explicitly use file descriptors;
+redirected Java streams cannot redirect diagnostic responses into logcat.
+Two corrected builds produced the same 7,659-byte JAR, SHA-256
+`e791541190e71d30382ce63ec40ceea67471bd103a18354276925d2305545d8e`.
+Independent scoped code reviews found no concrete regression in the native
+client, retained guards, wait changes, or fixed-prefix substitution.
+The final normal native suite passed **144 tests**, with 24 opt-in/environment
+tests ignored. Read-only snapshot/inventory comparisons, metadata preflight,
+and the controlled unlock runs were executed separately. Frontend files are
+unchanged from the previously verified 127-check suite.
+
+## Controlled live unlock timing — November 26, 2026
+
+After the owner's explicit request to benchmark the phone, one controlled native
+password startup completed on the Pixel 7 Pro (SDK 37, owner user 0). Metadata-only
+preflight confirmed enabled, unblocked enrollment. The v20 mirror was gracefully
+closed to release its cross-process lease. Its GUI process did not exit after
+graceful close requests and was left running; the shared ADB server retained PID
+44996 throughout. No unrelated process was terminated.
+
+The harness holds the phone lease, verifies the same phone locked/asleep before
+starting, and runs the production device validation and `run_scrcpy` path. The
+native pipeline retrieves the enrolled secret only after its existing guards.
+It observes host-side phase transitions without logging the secret or its length.
+Results from this single run, relative to the native startup request:
+
+- Password-entry stage began at **9.233 s**.
+- Enter submission began at **12.932 s** (entry/guard stage **3.699 s**).
+- Same-owner unlocked state was verified at **13.799 s**.
+- First decoded headless video texture was ready at **16.207 s**.
+- Total including the deliberate video observation and cleanup was **22.967 s**;
+  this is not the unlock time. Fresh software-rendered video reports were 29–30 FPS.
+
+The renderer used SDL's dummy driver, so video readiness is a headless software
+measurement rather than timing a desktop window's appearance. There was one
+guarded password attempt, no recording, and no credential output. The owned test
+mirror stopped, its helper processes were cleaned up, enrollment remained
+unblocked, and a fresh same-device snapshot verified the phone returned to sleep.
+If an attempt is blocked or uncertain, the harness stops and never clears that
+block or retries credentials. A sleep-restoration guard also covers early test
+failure; cleanup never guesses another device.
+
+`buildtools/Measure-UnlockStartup.ps1` provides a repeatable check. Without
+`-RunUnlock` it reads only enrollment/state preflight. With that explicit switch,
+it requires the current mirror to be closed, prepares/validates locked sleep,
+performs one native attempt, and saves only numeric timing/success data to a new
+JSON artifact. It accepts executable paths, never a password. The actual result
+is retained locally at `artifacts/unlock-startup-benchmark-verified.json`.
+
+This verifies one locked-startup native password replay and video startup on the
+owner's phone. Other parity/recovery cases remain on the backlog. Preparation was
+the larger delay in this run; no end-to-end comparison against the old helper was
+performed. Normal native checks passed **141 tests**, with 23 opt-in/environment
+tests ignored; preflight and the authorized live replay were run separately.
+
+## Further password-entry optimization — November 26, 2026
+
+The production change replaces ten constant snapshot framing calls to external
+`printf` with shell-builtin `echo`. On the Pixel, `command -V` confirmed that
+`printf` starts `/system/bin/printf`, while `echo` is builtin. Labels are fixed
+ASCII without options or backslash escapes. All diagnostic commands, filters,
+identity barriers, parser rules, credential handling, and input guards are
+unchanged; each snapshot stays within one pinned ADB shell channel.
+
+The measurement harness now runs the compiled native commands and parses every
+response against the selected transport's identity/user/SDK. It also requires an
+observed password method, physical-panel state, and recognized locked/unlocked
+state. This corrects the earlier PowerShell harness, which preserved raw Windows
+source CRLF instead of compiler-normalized newlines and did not validate output.
+Its extracted full-snapshot figures below are superseded by these native results.
+
+Five alternating native trials on the connected Pixel produced baseline times
+751/766/788/805/747 ms (median **766 ms**) and builtin-marker times
+509/607/566/505/465 ms (median **509 ms**), about **34% less diagnostic time**.
+An earlier validated comparison measured 791/545 ms medians, consistent with
+roughly one-third lower check latency. These are read-only component timings;
+no password record was accessed and no credential, key, power, lock, or connection
+action was sent. Full password-replay timing remains a separate owner test.
+
+An experimental parallel reader retained an open shell across identity barriers
+and the final physical-panel check, with bounded framing/cancellation and worker
+cleanup. Its five alternating native medians were 767 ms serial and 770 ms
+parallel, so it was excluded from production. Source and notes are preserved
+locally in `artifacts/password-optimization-experiments/`; no additional runtime
+module, Windows feature, dependency, or parallel ADB worker path is shipped.
+
+`unlock_detection::tests::live_snapshot_timing_without_input` is an explicitly
+opt-in, read-only native benchmark. It reconstructs the previous marker commands
+for comparison and fails on unrecognized state rather than reporting timings for
+an invalid response. The normal native suite passed **141 tests**, with 22
+environment/opt-in tests ignored at that checkpoint; the benchmark was separately run and passed.
+Frontend code is unchanged from its verified 127-test checkpoint. V23 packages
+this source change; the original installed app and helper remain unchanged.
+
 ## Password-entry timing checkpoint — November 26, 2026
+
+Measurement correction: PowerShell-extracted full-snapshot figures in this older
+checkpoint are superseded by the compiled, state-validated measurements above.
 
 The owner identified the password stage as much slower than the previous helper.
 Source inspection found that the earlier `New-PasswordInputScript` runs a guarded

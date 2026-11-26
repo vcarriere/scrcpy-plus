@@ -1,0 +1,11 @@
+{
+  "sourceSha256": "33a79c970a1279807f0c81bdb8f310e111ac5295968ba7809fa16df933aa76c8",
+  "helperSha256": "e791541190e71d30382ce63ec40ceea67471bd103a18354276925d2305545d8e",
+  "helperBytes": 7659,
+  "javaRelease": 8,
+  "androidMinApi": 35,
+  "javaVersion": "javac 27.0.1.1",
+  "d8Version": "D8 9.5.33 (build 06d10cab5b08b17aa947de640994f682c3786336 from go/r8bot (luci-r8-custom-ci-jammy-c3d-us-central1-b-2-5qn4))",
+  "syntheticChecks": 36,
+  "deviceTested": false
+}

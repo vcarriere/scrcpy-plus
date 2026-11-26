@@ -56,3 +56,20 @@ This is the guide to building the latest version of SCRCPY+ for all operating sy
     - run `npm run tauri build`
     - 🎉 The compiled project should be in the `application/src-tauri/target/release` folder
 
+## Read-only unlock-state helper
+
+Normal app builds embed the checked-in `application/src-tauri/resources/unlock-guard.jar`.
+After changing its Java source, rebuild it from the repository root with
+`./buildtools/unlock-guard/Build.ps1 -Bootstrap`, then build the app. Later builds
+can omit `-Bootstrap`. This uses pinned, portable build tools without replacing
+the system Java installation or installing the Android SDK. Source, hashes,
+compatibility pins, tests, and compiler licenses are documented in
+`buildtools/unlock-guard/README.md`.
+
+`buildtools/Measure-UnlockStartup.ps1` accepts explicit ADB/scrcpy executable
+paths and defaults to read-only enrollment/state preflight. `-RunUnlock` is a
+one-attempt device benchmark that requires the current mirror closed and the
+phone available for testing; it uses the enrolled native credential internally
+and restores sleep afterward. It never accepts or logs a password or retries an
+uncertain attempt. Live parity limits and measured results are in DEVELOPMENT.md.
+

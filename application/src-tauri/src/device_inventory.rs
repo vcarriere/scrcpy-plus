@@ -5,7 +5,9 @@ use crate::{ adb_server, mdns_discovery, screen_power::AdbClient, system_command
 
 const MAX_ROUTES: usize = 64;
 const PROPERTIES: [&str; 8] = ["ro.serialno", "ro.product.manufacturer", "ro.product.device", "ro.product.model", "ro.build.version.release", "ro.build.version.sdk", "ro.build.id", "ro.build.version.security_patch"];
-const DETAILS: &str = "for property in ro.serialno ro.product.manufacturer ro.product.device ro.product.model ro.build.version.release ro.build.version.sdk ro.build.id ro.build.version.security_patch; do printf '%s=' \"$property\"; getprop \"$property\"; done";
+// Only fixed ASCII property names reach echo; no value/escape interpretation is
+// changed. Android's builtin avoids eight formatter processes per validation.
+const DETAILS: &str = "for property in ro.serialno ro.product.manufacturer ro.product.device ro.product.model ro.build.version.release ro.build.version.sdk ro.build.id ro.build.version.security_patch; do echo -n \"$property=\"; getprop \"$property\"; done";
 const CHANGED: &str = "The device connection changed. Wait for the device list to refresh, then select its connection again.";
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -258,6 +260,32 @@ fn disconnect_checked(selection: &Selection, client: &AdbClient, query: &mut imp
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "Read-only live inventory timing; requires explicitly selected existing ADB and Pixel transport, never reads credentials or sends input"]
+    fn live_inventory_timing_without_input() {
+        let client = AdbClient { path: std::env::var("SCRCPY_PLUS_TEST_ADB").unwrap(), socket: "tcp:localhost:5037".into() };
+        let transport = std::env::var("SCRCPY_PLUS_TEST_TRANSPORT").unwrap();
+        assert!(adb_server::version(&client.socket).unwrap().is_some());
+        let original = DETAILS.replace("echo -n \"$property=\"", "printf '%s=' \"$property\"");
+        assert_ne!(original, DETAILS);
+        let mut external = Vec::new();
+        let mut builtin = Vec::new();
+        let mut expected = None;
+        for trial in 0..5 {
+            for fast in if trial % 2 == 0 { [false, true] } else { [true, false] } {
+                let started = Instant::now();
+                let output = client.query(&["-t", &transport, "shell", if fast { DETAILS } else { &original }], &mut || false, false).unwrap();
+                let (_, identity, _) = details(&output).expect("Every measured response must pass the existing strict inventory parser.");
+                assert!(identity.is_some());
+                if let Some(expected) = &expected { assert!(expected == &output, "Both commands must return exactly the same verified property data."); } else { expected = Some(output); }
+                if fast { builtin.push(started.elapsed().as_millis()); } else { external.push(started.elapsed().as_millis()); }
+            }
+        }
+        let mut external_sorted = external.clone(); external_sorted.sort();
+        let mut builtin_sorted = builtin.clone(); builtin_sorted.sort();
+        println!("Validated inventory timing: external_ms={:?}, external_median_ms={}, builtin_ms={:?}, builtin_median_ms={}, identical_output=true, credential_access=false, input_sent=false", external, external_sorted[2], builtin, builtin_sorted[2]);
+    }
 
     fn client() -> AdbClient { AdbClient { path: "synthetic-adb".into(), socket: "tcp:127.0.0.1:1".into() } }
 

@@ -6,6 +6,21 @@ automatic unlock, and component update catalogs/integrity checks. Where packages
 offer a choice of licenses, the MIT option is used here. The original notices for scrcpy,
 ADB, and their runtime libraries remain with those components.
 
+## Read-only Android diagnostic helper build tools
+
+The original GPL-3.0-only helper source and rebuild instructions are in
+`buildtools/unlock-guard/`. Android reflection and `app_process` behavior follow
+the [Android Open Source Project](https://android.googlesource.com/platform/frameworks/base/);
+explicit file-descriptor streams and the Java formatting follow the existing
+[scrcpy server](https://github.com/Genymobile/scrcpy/tree/v5.0.1/server/src/main/java/com/genymobile/scrcpy).
+No Android framework or scrcpy server code is embedded in the diagnostic JAR.
+
+Its build-only tools are [OpenJDK](https://jdk.java.net/) 27.0.1.1 and
+[R8/D8](https://r8.googlesource.com/r8/) 9.5.33. Tool sources, publisher hashes,
+and complete downloaded-tool license notices are recorded under
+`buildtools/unlock-guard/`, including `licenses/`. Those compiler tools are not
+distributed in the app. The resulting JAR contains only this project's helper.
+
 ## zeroize 1.9.2
 
 Source: https://github.com/RustCrypto/utils/tree/master/zeroize
