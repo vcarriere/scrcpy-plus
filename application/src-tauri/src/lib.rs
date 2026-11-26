@@ -10,6 +10,8 @@ mod device_inventory;
 mod automatic_unlock;
 mod unlock_detection;
 mod unlock_store;
+mod tool_catalog;
+mod adb_installer;
 use tauri::Manager;
 use system_command::{ scrcpy, adb };
 
@@ -52,6 +54,19 @@ fn check_selected_installation(destination: &std::path::Path, selected: &[String
   Ok(())
 }
 
+fn managed_tool_path(path: &std::path::Path, directory: &std::path::Path) -> Result<bool, String> {
+  let root = match directory.canonicalize() {
+    Ok(root) => root,
+    Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+    Err(error) => return Err(error.to_string()),
+  };
+  let target = path.canonicalize().map_err(|error| error.to_string())?;
+  #[cfg(windows)]
+  { Ok(target.to_string_lossy().to_lowercase().starts_with(&(root.to_string_lossy().to_lowercase() + "\\"))) }
+  #[cfg(not(windows))]
+  { Ok(target.starts_with(root)) }
+}
+
 #[tauri::command]
 async fn get_binary_paths() -> Result<Value, String> {
   tauri::async_runtime::spawn_blocking(system_command::get_binary_paths).await.map_err(|e| e.to_string())
@@ -64,13 +79,146 @@ async fn download_scrcpy(app: tauri::AppHandle, url: String, version: String) ->
   let base = app.path().app_data_dir().map_err(|e| e.to_string())?;
   tauri::async_runtime::spawn_blocking(move || {
     let _installation = adb_server::install()?;
+    if base.join("scrcpy").join(&version).exists() {
+      return downloader::kept_version(&base, &version)?.ok_or_else(|| "The kept scrcpy package could not be verified. Its files were preserved; repair or remove that copy explicitly before reinstalling it.".to_string());
+    }
     let selected = system_command::get_binary_paths();
     let paths = ["scrcpy_path", "adb_path"].iter().filter_map(|key| selected[key]["path"].as_str().map(str::to_string)).collect::<Vec<_>>();
     check_selected_installation(&base.join("scrcpy").join(&version), &paths)?;
-    downloader::download_and_extract(&base, &url, &version)
+    let release = tool_catalog::scrcpy_release(&version)?;
+    if release.url != url { return Err("The archive does not match the official release for this platform.".into()); }
+    downloader::download_verified(&base, &release)
   })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+async fn get_tool_releases(tool: String) -> Result<Vec<tool_catalog::Release>, String> {
+  tauri::async_runtime::spawn_blocking(move || match tool.as_str() {
+    "adb" => tool_catalog::adb_releases(),
+    "scrcpy" => tool_catalog::scrcpy_releases(),
+    _ => Err("Unknown tool.".into()),
+  }).await.map_err(|_| "The release catalog could not finish.".to_string())?
+}
+
+#[tauri::command]
+async fn get_installed_adb(app: tauri::AppHandle) -> Result<Vec<adb_installer::Installed>, String> {
+  let base = app.path().app_data_dir().map_err(|error| error.to_string())?;
+  tauri::async_runtime::spawn_blocking(move || adb_installer::installed(&base)).await.map_err(|_| "Could not read kept ADB packages.".to_string())?
+}
+
+#[tauri::command]
+async fn restore_adb(app: tauri::AppHandle, version: String) -> Result<Value, String> {
+  let base = app.path().app_data_dir().map_err(|error| error.to_string())?;
+  tauri::async_runtime::spawn_blocking(move || {
+    let _restoration = adb_server::install()?;
+    adb_installer::restore(&base, &version)
+  }).await.map_err(|_| "The kept ADB package could not be restored.".to_string())?
+}
+
+#[tauri::command]
+async fn compact_adb_cache(app: tauri::AppHandle) -> Result<Value, String> {
+  let base = app.path().app_data_dir().map_err(|error| error.to_string())?;
+  tauri::async_runtime::spawn_blocking(move || {
+    let _compaction = adb_server::install()?;
+    let selected = system_command::get_binary_paths();
+    let mut protected = Vec::new();
+    for tool in ["scrcpy_path", "adb_path"] {
+      for field in ["path", "requested"] {
+        if let Some(path) = selected[tool][field].as_str().filter(|path| !path.is_empty()) { protected.push(path.to_string()); }
+      }
+    }
+    let socket = adb_server::endpoint()?;
+    if adb_server::version(&socket)?.is_some() {
+      let Some(path) = adb_server::details(&socket).ok().flatten().and_then(|details| details.path).filter(|path| !path.is_empty()) else {
+        return Ok(json!({ "compressed": 0, "skipped": "running_server_path_unavailable" }));
+      };
+      protected.push(path);
+    }
+    adb_installer::compact_inactive(&base, &protected)
+  }).await.map_err(|_| "Old ADB packages could not be compacted; their existing files were kept.".to_string())?
+}
+
+#[tauri::command]
+async fn get_installed_scrcpy(app: tauri::AppHandle) -> Result<Vec<Value>, String> {
+  let base = app.path().app_data_dir().map_err(|error| error.to_string())?;
+  tauri::async_runtime::spawn_blocking(move || downloader::kept_versions(&base)).await.map_err(|_| "Could not read kept scrcpy packages.".to_string())?
+}
+
+#[tauri::command]
+async fn download_adb(app: tauri::AppHandle, version: String) -> Result<Value, String> {
+  let base = app.path().app_data_dir().map_err(|error| error.to_string())?;
+  tauri::async_runtime::spawn_blocking(move || {
+    let _installation = adb_server::install()?;
+    let release = tool_catalog::adb_releases()?.into_iter().find(|release| release.version == version).ok_or("This ADB version is not in the official catalog. Use a verified kept package for an older version.")?;
+    adb_installer::download(&base, &release)
+  }).await.map_err(|_| "ADB installation could not finish.".to_string())?
+}
+
+#[tauri::command]
+async fn inspect_tool_version(tool: String, path: Option<String>) -> Result<Option<String>, String> {
+  tauri::async_runtime::spawn_blocking(move || system_command::inspect_tool_version(&tool, path.as_deref())).await.map_err(|_| "Could not inspect the executable version.".to_string())?
+}
+
+#[tauri::command]
+async fn activate_tool_paths(app: tauri::AppHandle, scrcpy_path: Option<String>, adb_path: Option<String>) -> Result<(), String> {
+  let base = app.path().app_data_dir().map_err(|error| error.to_string())?;
+  tauri::async_runtime::spawn_blocking(move || {
+    let _activation = adb_server::install()?;
+    let current = system_command::get_binary_paths();
+    for (name, requested) in [("scrcpy_path", &scrcpy_path), ("adb_path", &adb_path)] {
+      if requested.as_deref().filter(|path| !path.is_empty()) == current[name]["requested"].as_str() { continue; }
+      if let Some(path) = requested.as_deref().filter(|path| !path.is_empty()) {
+        if !std::path::Path::new(path).is_file() { return Err("The selected tool is unavailable. Keep the current version and try again.".into()); }
+        if name == "adb_path" && managed_tool_path(std::path::Path::new(path), &base.join("adb"))? { adb_installer::verify_selected(&base, path)?; }
+        if name == "scrcpy_path" && managed_tool_path(std::path::Path::new(path), &base.join("scrcpy"))? { downloader::verify_kept(&base, path)?; }
+      }
+    }
+    if adb_path.as_deref().filter(|path| !path.is_empty()) != current["adb_path"]["requested"].as_str() || current["adb_path"]["invalid"] == true {
+      let candidate = adb_path.clone().filter(|path| !path.is_empty()).unwrap_or_else(system_command::default_adb_path);
+      if let Some(running) = adb_server::version(&adb_server::endpoint()?)? {
+        let protocol = system_command::inspect_adb_protocol(&candidate)?;
+        if running != protocol {
+          return Err("This ADB client uses a different server protocol. Stop the shared ADB server explicitly before changing versions; it will not be restarted automatically.".into());
+        }
+      }
+    }
+    system_command::set_custom_paths(scrcpy_path, adb_path);
+    Ok(())
+  }).await.map_err(|_| "Tool activation could not finish.".to_string())?
+}
+
+fn tool_update_result(tool: &str, current: Option<&str>, catalog: Result<Vec<tool_catalog::Release>, String>) -> Value {
+  match catalog {
+    Err(error) => json!({ "tool": tool, "state": "error", "current_version": current, "error": error }),
+    Ok(releases) => match releases.first() {
+      None => json!({ "tool": tool, "state": "unavailable", "current_version": current }),
+      Some(release) => {
+        let state = match current.and_then(|current| tool_catalog::compare_versions(&release.version, current)) {
+          Some(std::cmp::Ordering::Greater) => "available",
+          Some(_) => "current",
+          None => "unknown",
+        };
+        json!({ "tool": tool, "state": state, "current_version": current, "latest_version": release.version, "release_url": release.release_url, "url": release.url })
+      },
+    },
+  }
+}
+
+#[tauri::command]
+async fn get_tool_updates() -> Result<Vec<Value>, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    let versions = system_command::dependency_versions();
+    std::thread::scope(|scope| {
+      let adb = scope.spawn(tool_catalog::adb_releases);
+      let scrcpy = scope.spawn(tool_catalog::scrcpy_releases);
+      vec![
+        tool_update_result("adb", versions["adb"].as_str(), adb.join().unwrap_or_else(|_| Err("ADB release lookup failed.".into()))),
+        tool_update_result("scrcpy", versions["scrcpy"].as_str(), scrcpy.join().unwrap_or_else(|_| Err("scrcpy release lookup failed.".into()))),
+      ]
+    })
+  }).await.map_err(|_| "The tool update checks could not finish.".to_string())
 }
 
 #[tauri::command]
@@ -202,6 +350,21 @@ async fn control_adb(start: bool) -> Result<Value, String> {
 mod tests {
   use super::*;
 
+  fn release(version: &str) -> tool_catalog::Release {
+    tool_catalog::Release { version: version.into(), url: "https://example.invalid/unused.zip".into(), release_url: "https://example.invalid/unused".into(), checksum: "0".repeat(64), checksum_type: "sha256".into(), size: 1 }
+  }
+
+  #[test]
+  fn update_results_compare_package_releases_and_do_not_claim_unknown_versions_are_current() {
+    assert_eq!(tool_update_result("adb", Some("37.0.3-16887417"), Ok(vec![release("37.0.3")]))["state"], "current");
+    assert_eq!(tool_update_result("adb", Some("37.0.2-1234"), Ok(vec![release("37.0.3")]))["state"], "available");
+    assert_eq!(tool_update_result("adb", None, Ok(vec![release("37.0.3")]))["state"], "unknown");
+    assert_eq!(tool_update_result("scrcpy", Some("custom wrapper"), Ok(vec![release("v5.0.1")]))["state"], "unknown");
+    let error = tool_update_result("adb", Some("37.0.3"), Err("offline".into()));
+    assert_eq!(error["state"], "error");
+    assert_eq!(error["current_version"], "37.0.3");
+  }
+
   #[test]
   fn frontend_reload_can_reapply_unchanged_paths_during_installation() {
     let current = system_command::get_binary_paths();
@@ -224,6 +387,10 @@ mod tests {
     std::fs::write(&unrelated, b"another executable").unwrap();
     assert!(check_selected_installation(&destination, &[wrapper.to_string_lossy().to_string()]).is_err());
     assert!(check_selected_installation(&destination, &[unrelated.to_string_lossy().to_string()]).is_ok());
+    assert!(managed_tool_path(&destination.join("..").join("v5.0.1").join("password launcher.cmd"), &destination).unwrap());
+    assert!(!managed_tool_path(&unrelated, &destination).unwrap());
+    #[cfg(windows)]
+    assert!(managed_tool_path(std::path::Path::new(&wrapper.to_string_lossy().to_uppercase()), &destination).unwrap());
     assert_eq!(std::fs::read(&wrapper).unwrap(), b"keep custom launcher");
     std::fs::remove_file(wrapper).unwrap();
     std::fs::remove_file(unrelated).unwrap();
@@ -241,7 +408,7 @@ pub fn run() {
     })
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
-    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, get_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen, control_screen_power, get_device_inventory, disconnect_device_route, inspect_unlock, enroll_unlock, set_unlock_enabled, remove_unlock, stop_unlock_session])
+    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, get_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen, control_screen_power, get_device_inventory, disconnect_device_route, inspect_unlock, enroll_unlock, set_unlock_enabled, remove_unlock, stop_unlock_session, get_tool_releases, get_installed_adb, get_installed_scrcpy, download_adb, inspect_tool_version, activate_tool_paths, get_tool_updates, restore_adb, compact_adb_cache])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|app, event| {

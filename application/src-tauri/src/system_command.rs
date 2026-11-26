@@ -167,6 +167,21 @@ pub fn dependency_versions() -> serde_json::Value {
     dependency_versions_for(&paths)
 }
 
+pub fn inspect_tool_version(tool: &str, path: Option<&str>) -> Result<Option<String>, String> {
+    if !["adb", "scrcpy"].contains(&tool) { return Err("Unknown tool.".into()); }
+    let path = path.map(str::to_string).unwrap_or_else(|| default_binary(tool));
+    let Ok(output) = version_output(&path) else { return Ok(None); };
+    Ok(if tool == "adb" { parse_adb_version(&output).ok().and_then(|value| value["version"].as_str().map(str::to_string)) } else { parse_scrcpy_version(&output) })
+}
+
+pub fn inspect_adb_protocol(path: &str) -> Result<u32, String> {
+    let value = parse_adb_version(&version_output(path)?)?;
+    value["protocol_version"].as_str().and_then(|version| version.strip_prefix("1.0."))
+        .and_then(|version| version.parse().ok()).ok_or("The selected ADB protocol could not be verified.".into())
+}
+
+pub fn default_adb_path() -> String { default_binary("adb") }
+
 pub fn adb_client() -> serde_json::Value {
     let command = adb_path();
     let result = version_output(&command).and_then(|output| parse_adb_version(&output));

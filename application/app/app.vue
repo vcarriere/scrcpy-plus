@@ -1,6 +1,7 @@
 <template>
   <NuxtLayout>
       <NuxtPage></NuxtPage>
+      <version_change_confirmation />
   </NuxtLayout>
 </template>
 

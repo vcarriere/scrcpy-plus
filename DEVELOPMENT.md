@@ -62,6 +62,105 @@ device labels/grouping, and full child-process cancellation as backlog work.
 Later checkpoints below record the implemented additions and their distinct
 source, simulated, and live verification limits.
 
+## Component update checkpoint — November 26, 2026
+
+Update work now covers backlog 02, 07, and 15 in source. The combined checker
+reports SCRCPY+, ADB, and scrcpy separately, including installed/available versions,
+source failures, and unknown versions. SCRCPY+ keeps the existing Frontesque
+upstream release feed and release-page download action; there is no automatic
+application-binary replacement or claim of signed fork self-updates. ADB uses
+Google's stable Platform-Tools repository, and scrcpy uses Genymobile releases.
+The manual **Check for updates** button works with automatic checks on or off
+without changing the saved preference. A source failure does not discard another
+component's successful result; shared pending state prevents duplicate checks.
+
+Advanced settings have separate ADB and scrcpy automatic-install opt-ins, both
+off by default. Main automatic checking and Remember SCRCPY config remain on by
+default; Advanced remains hidden. Existing saved choices retain their meaning.
+The background monitor checks availability and installs only opted-in managed
+tools when idle; custom executable overrides remain notify-only. Automatic scrcpy
+activation also retains the currently supported 5.0.1 control compatibility rather
+than silently breaking native unlock or protected-screen switching. The Android
+SDK agreement is linked beside manual Platform-Tools downloads and the Advanced
+ADB install opt-in. Only those deliberate actions acknowledge its terms; merely
+checking for updates does not accept a license or install a package.
+
+The shared version manager includes independent ADB selection and kept local
+ADB/scrcpy packages. It does not invent older Google archive URLs: an ADB package
+must come from official metadata or an already verified local installation.
+Selecting an old scrcpy release resolves its official checksum file on demand
+when the GitHub asset digest is absent. Package bytes are checked against the
+published size and digest before bounded staging/extraction. Google currently
+publishes SHA-1 in authenticated repository metadata; that legacy integrity check
+is not represented as an independent publisher signature. scrcpy uses published
+SHA-256 digests or SHA256SUMS. Runtime versions, required files, host architecture,
+and retained ADB receipts are checked before selection. Notices remain packaged.
+
+Native installation/activation gates reject active sessions and conflicting ADB
+operations. Changing the selected client never automatically stops or restarts
+the shared server. Its protocol must match the running daemon, including when
+resetting to a PATH-based default. A protocol mismatch requires an explicit user
+Stop before selection. Existing scrcpy version directories are not overwritten:
+a valid copy can be reused offline, and an invalid copy is kept for deliberate
+recovery. This also avoids replacing an executable used by a foreign daemon.
+
+A successful manual version change disables only that tool's automatic
+installation. Automatic checking stays unchanged. Numeric downgrade prompts show
+current and target versions and require confirmation; an unknown version also
+requires confirmation. Cancellation precedes downloading/restoring/activation.
+Native paths and saved selections/update preferences use rollback if persistence
+fails. scrcpy changes preserve independently selected ADB and custom launchers.
+
+Conditional compression of inactive kept ADB packages is implemented, with
+synthetic cache/restore coverage and separate full-package acceptance. Automatic
+compaction runs only after native activation and saved preferences commit; cache failure
+reports a warning without reverting a successful tool selection. The selected
+client and running server are protected, an unknown daemon origin prevents
+compaction, and platforms without equivalent loaded-file protection skip removal
+of expanded packages. Each package must save at least 30% and demonstrate a
+checksum-verified restore within two seconds before its expanded copy is removed.
+Selecting a compressed local version restores and validates it offline after any
+downgrade confirmation, before executable activation. **Compress inactive versions**
+also works locally without checking release feeds, processes at most two eligible
+versions per action, and reports any remaining work. Savings include cache-manifest
+overhead. Managed-path aliases still require complete package validation.
+
+The feasibility probe used only the existing v18 preview's ADB subset, not a
+fresh full Google SDK package. It compressed 9,996,465 bytes to 4,572,608 bytes
+(54.3% saved). Compression took 1,838/1,930/2,035 ms; checksum-verified restoration
+took 618/669/636 ms across three runs. These measurements establish feasibility
+for that subset, not final full-package cache or cross-platform acceptance.
+
+Verification limits at this checkpoint:
+
+- Public native metadata probes passed for ADB 37.0.3, scrcpy 5.0.1, and an older
+  scrcpy release's SHA256SUMS fallback. They downloaded metadata/checksum text
+  only, not executables, and did not contact a phone or change the shared server.
+- The final native suite passed **138 tests**, with 21 environment/opt-in tests
+  skipped by the default run. The headless UI suite passed **120 tests**, including
+  offline kept/compressed selection, cancellation, failure/rollback, local-only
+  compaction, update policies, and unchanged Advanced scroll positioning. Narrow
+  Settings and downgrade-dialog renders were inspected using synthetic data.
+  Playwright closed its contexts and test server; no desktop was inspected.
+- A separate existing-runtime probe passed using only the v18 preview's public
+  scrcpy runtime: offline discovery/validation worked without a new receipt or
+  network request. Full fresh SDK installation/cache and platform acceptance remain
+  pending; synthetic tests do not establish those results.
+- The installed application, its existing tools, pairing keys, phone state, and
+  password helper have not been changed by this update implementation. Native
+  password playback acceptance from v18 remains pending local enrollment.
+- Preview v19 is the next build target. Its final source commit, executable
+  format, and packaged hashes will be recorded after packaging; source work or
+  synthetic results alone do not establish owner acceptance.
+
+New implementation references are `tool_catalog.rs`, `adb_installer.rs`, the
+verified/kept-package paths in `downloader.rs`, native activation commands in
+`lib.rs`, `app_updates.ts`, `tool_updates.client.ts`, and the shared version
+selection/confirmation components. quick-xml 0.42.0 supplies bounded XML parsing;
+RustCrypto sha1 0.11.0 and sha2 0.11.2 supply digest implementations. Their MIT
+licenses are retained in THIRD_PARTY_NOTICES.md; existing project/runtime notices
+and attribution are preserved.
+
 ## Native automatic unlock checkpoint — November 25, 2026
 
 The owner narrowed the current implementation to automatic method detection and
@@ -305,9 +404,10 @@ It shows progress, a newer stable release, up-to-date status, or a retryable err
 Manual and automatic checks share their pending request and result across pages;
 requests have a ten-second timeout and no automatic HTTP retries. An empty or
 unusable stable-release feed reports failure rather than claiming to be current.
-New ADB and scrcpy checks, installation, and updater behavior remain deferred
-under item 15. Disabled automatic checks make no background app-release request;
-explicit manual checks remain available. No automatic installation was introduced.
+At that earlier checkpoint, ADB/scrcpy checks and installation were deferred under
+item 15. Disabled automatic checks made no background app-release request, while
+manual checks remained available. The November 26 component-update checkpoint
+above records the expanded checks and separate installation opt-ins.
 The manual button sits alongside the automatic-check option at the normal window
 width and wraps below it on narrow windows. Progress and results stay below the
 controls. Its **Check for updates** label and height match the compact toggle row,

@@ -19,7 +19,8 @@ async function manager(page, options = {}) {
         const state = window.version_test = { downloads: [], ...options };
         sessionStorage.setItem("scrcpyplus.version_loads", String(Number(sessionStorage.getItem("scrcpyplus.version_loads") || 0) + 1));
         if (options.managed && !sessionStorage.getItem("scrcpyplus.version_initialized")) {
-            localStorage.setItem("scrcpyplus.managed_release", JSON.stringify({ ...old_paths, version: "v5.0.0" }));
+            localStorage.setItem("scrcpyplus.managed_release", JSON.stringify({ ...(options.managed_paths || old_paths), version: options.managed_version || "v5.0.0" }));
+            if (options.auto_scrcpy !== undefined) localStorage.setItem("setting.auto_update_scrcpy", String(options.auto_scrcpy));
             sessionStorage.setItem("scrcpyplus.version_initialized", "true");
         }
         if (options.storage_fail) {
@@ -34,11 +35,17 @@ async function manager(page, options = {}) {
             const invoke = value.invoke;
             value.invoke = async (command, args = {}) => {
                 if (command === "environment") return { ...await invoke(command, args), ...options.environment };
+                if (command === "get_tool_releases" || command === "get_installed_adb") return [];
+                if (command === "get_installed_scrcpy") return options.installed_scrcpy || [];
+                if (command === "activate_tool_paths") {
+                    if (state.activation_fail && args.scrcpyPath === new_paths.scrcpy_path) throw "Simulated activation failure";
+                    return invoke("set_binary_paths", args);
+                }
                 if (command === "download_scrcpy") {
                     state.downloads.push(args);
                     if (state.download_error) throw "Simulated download failure";
                     if (state.deferred) return new Promise(resolve => { state.finish_download = () => { state.missing_adb = false; resolve(new_paths); }; });
-                    return new_paths;
+                    return args.version === "v5.0.0" ? old_paths : new_paths;
                 }
                 if (command === "exec_adb" && args.args[0] === "--version" && state.missing_adb) throw "Simulated missing ADB";
                 if (command === "set_binary_paths" && state.activation_fail && args.scrcpyPath === new_paths.scrcpy_path) throw "Simulated activation failure";
@@ -54,9 +61,9 @@ async function manager(page, options = {}) {
         });
         if (existing) internal = wrap(existing);
     }, { options, old_paths, new_paths });
-    await page.route(releases_url, route => route.fulfill({ json: [release("v5.0.1"), release("v5.0.0")] }));
+    await page.route(releases_url, route => options.catalog_offline ? route.abort() : route.fulfill({ json: [release("v5.0.1"), release("v5.0.0")] }));
     await page.goto(options.start_path || "/scrcpy_manager");
-    if (!options.start_path) await expect(page.getByText("v5.0.1", { exact: true })).toBeVisible();
+    if (!options.start_path && !options.catalog_offline) await expect(page.getByText("v5.0.1", { exact: true })).toBeVisible();
 }
 
 function row(page, version = "v5.0.1") {
@@ -154,4 +161,45 @@ test("a missing-ADB download finishing after navigation does not reload the new 
     await page.waitForTimeout(250);
     expect(await page.evaluate(() => sessionStorage.getItem("scrcpyplus.version_loads"))).toBe("1");
     await expect(page).toHaveURL(/\/settings$/);
+});
+
+test("scrcpy downgrade confirmation precedes download and can be cancelled", async ({ page }) => {
+    await manager(page, { managed: true, managed_paths: new_paths, managed_version: "v5.0.1", saved_paths: new_paths, auto_scrcpy: true });
+    await row(page, "v5.0.0").getByRole("button", { name: "Download & use", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Downgrade scrcpy?" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText("5.0.1 → v5.0.0");
+    expect(await page.evaluate(() => version_test.downloads)).toEqual([]);
+    await dialog.getByRole("button", { name: "Cancel", exact: true }).click();
+    expect(await page.evaluate(() => localStorage.getItem("scrcpyplus.scrcpy_path"))).toBe(new_paths.scrcpy_path);
+    expect(await page.evaluate(() => localStorage.getItem("setting.auto_update_scrcpy"))).toBe("true");
+});
+
+test("confirmed scrcpy downgrade disables only its installation policy", async ({ page }) => {
+    await manager(page, { managed: true, managed_paths: new_paths, managed_version: "v5.0.1", saved_paths: new_paths, auto_scrcpy: true });
+    await page.evaluate(() => localStorage.setItem("setting.auto_update_adb", "true"));
+    await row(page, "v5.0.0").getByRole("button", { name: "Download & use", exact: true }).click();
+    await page.getByRole("dialog", { name: "Downgrade scrcpy?" }).getByRole("button", { name: "Downgrade", exact: true }).click();
+    await expect(row(page, "v5.0.0").getByText("In use", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem("setting.auto_update_scrcpy"))).toBe("false");
+    expect(await page.evaluate(() => localStorage.getItem("setting.auto_update_adb"))).toBe("true");
+    expect(await page.evaluate(() => localStorage.getItem("scrcpyplus.adb_path"))).toBe(new_paths.adb_path);
+});
+
+test("kept local scrcpy versions can be selected offline without another download", async ({ page }) => {
+    const local_paths = { version: "v5.0.2", scrcpy_path: "C:\\AppData\\scrcpy\\v5.0.2\\scrcpy.exe", adb_path: "C:\\AppData\\scrcpy\\v5.0.2\\adb.exe" };
+    await manager(page, { catalog_offline: true, installed_scrcpy: [local_paths] });
+    await expect(row(page, "v5.0.2").getByText("Kept locally", { exact: true })).toBeVisible();
+    await row(page, "v5.0.2").getByRole("button", { name: "Use this version", exact: true }).click();
+    await expect(row(page, "v5.0.2").getByText("In use", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => version_test.downloads)).toEqual([]);
+    expect(await page.evaluate(() => localStorage.getItem("scrcpyplus.adb_path"))).toBeNull();
+});
+
+test("selecting scrcpy keeps the bundled/default ADB choice independent", async ({ page }) => {
+    await manager(page);
+    await row(page).getByRole("button", { name: "Download & use", exact: true }).click();
+    await expect(row(page).getByText("In use", { exact: true })).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem("scrcpyplus.adb_path"))).toBeNull();
+    expect(await page.evaluate(() => adb_test.binary_requests.adb_path)).toBeNull();
 });

@@ -115,13 +115,16 @@ and password helper are not replaced or imported.
     use a bundled/system default or a custom executable. Missing saved overrides
     explain their fallback; missing selected tools show Unavailable. Reset clears
     only that tool's override. Reading status does not execute either tool.
-13. "Automatically check for updates" controls the existing SCRCPY+ app check.
+13. "Automatically check for updates" covers SCRCPY+, Google Platform-Tools/ADB,
+    and Genymobile scrcpy, with separate versions, results, and errors.
     "Check for updates" works whether that setting is on or off and leaves
     it unchanged. The button sits alongside the option and wraps below it in
     narrow windows. Its compact height matches the toggle, including larger text.
-    It shows progress, current/newer-version results, or an error
-    you can retry. Neither check installs updates. Expanded ADB/scrcpy update
-    checks remain on the backlog. Running ADB markers use the app's purple theme
+    It shows progress, current/newer-version results, or an error you can retry.
+    A source failure must not hide the other components' results. Checking does
+    not install; Advanced has separate automatic-install opt-ins. SCRCPY+ keeps
+    its existing upstream release page and does not replace this fork's binary.
+    Running ADB markers use the app's purple theme
     in both the main-page version information and the advanced section's ADB card.
 14. While partway down Settings, toggle "Show advanced controls" on/off
     using the pointer or Space key. The advanced cards open below the toggle card
@@ -167,6 +170,37 @@ and password helper are not replaced or imported.
     password success is claimed by this build. Check mirror responsiveness in a
     scoped test after local enrollment. Fingerprint/face prompts remain on-phone;
     PIN/pattern replay and broader compatibility are deferred under backlog 03.
+20. In Advanced, Manage versions now includes independent ADB and SCRCPY choices.
+    Verified kept versions remain selectable offline. Fresh ADB downloads must
+    have official metadata; old Google URLs are not guessed. Read the linked
+    Android SDK agreement before choosing ADB "Download & use"; that deliberate
+    action downloads under those terms. Checking availability is not acceptance.
+    A downgrade shows current/target versions and requires confirmation; an
+    unknown version also requires confirmation. Cancel must not download,
+    restore, activate, or change preferences. A successful manual version change
+    disables only that tool's automatic installation, preserving automatic checks.
+21. Both Advanced automatic-install switches default off. Enabling ADB's switch
+    acknowledges the displayed SDK notice. Custom executables remain notify-only.
+    Automatic scrcpy changes retain supported 5.0.1 control compatibility.
+    Disabling the main automatic-check option prevents background requests and
+    automatic tool installation, while manual Check remains read-only and usable.
+22. Version activation waits for this app's sessions/ADB work to finish. It never
+    stops or restarts a shared server automatically. A client/server protocol
+    mismatch requires an explicit Stop before selecting another client. An
+    existing valid scrcpy copy is reused; an invalid kept directory is preserved
+    for deliberate recovery, rather than overwritten beneath another process.
+23. Conditional ADB cache compression is a separate acceptance item. A compressed
+    kept version shows "Restoring..." when selected and is validated offline
+    before activation, after any downgrade confirmation. Compaction follows a
+    successful native selection and saved preferences; cache failure reports a
+    warning without undoing the selection. The current client, running server,
+    and loaded Windows files must stay expanded; unknown server origins and
+    platforms without equivalent in-use-file protection skip compaction. Each
+    package must save at least 30% and verify restoration within two seconds.
+    "Compress inactive versions" works locally without a release-feed request;
+    it handles at most two eligible versions per action and reports remaining work.
+    Full SDK/cache acceptance and final integrated results are recorded in
+    DEVELOPMENT.md; the existing-preview subset benchmark is not full-package proof.
 
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI
@@ -176,8 +210,10 @@ replace the ADB server itself.
 This build tests the ADB controls, known-address discovery recovery, compact
 device labels, grouped connection paths, automatic protected-screen /
 fingerprint-prompt screen power, and the new password-only native unlock source.
-Automatic detection is implemented; real-device password acceptance remains
-pending. PIN/pattern replay and automatic updates remain on the backlog.
+Automatic detection and component-update source work are implemented; real-device
+password acceptance remains pending. PIN/pattern replay is still on the backlog.
+New update checks and guarded managed-tool selection have public-metadata and
+synthetic evidence; final integrated/cache acceptance is recorded separately.
 The separate profile starts with default settings and does not automatically use
 the existing password wrapper. Close the test app when finished; your installed
 app is unchanged and can be opened normally.

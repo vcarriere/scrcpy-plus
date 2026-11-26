@@ -63,43 +63,77 @@ Source starting points: `application/app/pages/settings.vue`,
 
 ### 02. ADB version selection and automatic updates, independently of scrcpy
 
-Priority: next, after item 01. Feasibility: practical; requires a dedicated updater.
+Implemented in source; final integrated/cache and real-platform acceptance remain
+below. Automatic checks and automatic installation are separate preferences.
 
-- [ ] Add automatic stable-version checks, **Check now**, installed/available
-      versions, and a setting to enable automatic installation when idle.
-- [ ] Add an ADB version chooser alongside the existing scrcpy version manager
+- [x] Add stable-version checks through **Check for updates**, separate installed/
+      available versions, and Advanced opt-ins to install ADB or scrcpy updates
+      automatically when idle. Installation defaults off for each tool; automatic
+      checks remain enabled by default. Custom executable selections are notify-only.
+- [x] Add an ADB version chooser alongside the existing scrcpy version manager
       in the advanced section. Show installed, selected, and available supported
       Platform-Tools/ADB releases; allow choosing a version independently of
       scrcpy. Verify package availability and authenticity for older versions
       before listing them as installable. Apply the manual-version and downgrade
       behavior in item 07 to both tools.
-- [ ] Use Google's official SDK Platform-Tools downloads and release metadata.
+- [x] Use Google's official SDK Platform-Tools downloads and release metadata.
       Check the package revision/build as well as the ADB protocol version:
       `1.0.41` alone does not identify the Platform-Tools release.
-- [ ] Stage and validate the matching OS/architecture package before activating
+- [x] Stage and validate the matching OS/architecture package before activating
       it. Preserve the complete required runtime set, including both ADB DLLs on
       Windows and applicable notices. Reject unsupported architectures clearly.
-- [ ] Verify the official download origin and available publisher signatures or
+- [x] Verify the official download origin and available publisher signatures or
       official integrity metadata. A locally computed hash records received bytes;
       it is not independent proof of authenticity.
-- [ ] Defer activation while mirroring, unlock attempts, or other affected ADB
+- [x] Defer activation while mirroring, unlock attempts, or other affected ADB
       work is active. Do not automatically kill the shared server or replace
       in-use binaries. Keep the previous working version for rollback.
-- [ ] Preserve pairing/authorization keys, saved connections, custom paths, and
+- [x] Preserve pairing/authorization keys, saved connections, custom paths, and
       unlock settings. Treat an externally managed custom ADB as notify-only
       unless the user explicitly chooses managed updates.
-- [ ] Keep ADB updates separate from scrcpy downloads so selecting a scrcpy
+- [x] Keep ADB updates separate from scrcpy downloads so selecting a scrcpy
       release does not silently downgrade ADB or replace a custom launcher.
-- [ ] Cover offline checks, interrupted downloads, extraction failures, locked
-      files, unsuccessful activation, rollback, and restoration after restart.
+- [x] Reuse verified kept ADB and scrcpy versions offline. Fresh older scrcpy
+      selections resolve the publisher's SHA256SUMS when GitHub asset digests are
+      absent. List historical ADB downloads only when official metadata verifies
+      them; do not guess Google archive addresses. Valid kept scrcpy packages
+      are reused, and an invalid retained directory is preserved rather than
+      overwritten. Protocol checks include PATH-based defaults before activation.
+- [x] Link the Android SDK license beside manual ADB downloads and the Advanced
+      ADB automatic-install opt-in. Those deliberate actions acknowledge the
+      terms; checking availability alone never records license acceptance.
+- [x] Complete integrated native/UI and conditional-cache regressions: 138 native
+      and 120 headless UI tests passed; environment/opt-in checks remain distinct.
+- [ ] Complete scoped managed-version acceptance for offline checks, interrupted
+      downloads, extraction failures, locked/in-use files, unsuccessful activation,
+      rollback, and restoration after restart. Owner tools and the shared server
+      have not been changed as part of implementation verification.
+- [x] Implement conditional compression for kept ADB packages: protect
+      the selected client, running server, and loaded Windows files; skip unknown
+      server origins and platforms without an equivalent in-use-file guarantee.
+      Keep compression only when a package saves at least 30% and its verified
+      restore takes at most two seconds. Restore and validate offline before
+      activating a compressed version. Compact only after activation and saved
+      preferences commit; a cache failure must not undo a successful selection.
+      Add a local-only **Compress inactive versions** action, processing at most
+      two eligible versions per action and reporting remaining work. Include
+      manifest overhead in the savings gate; validate equivalent managed paths.
+- [ ] Verify fresh full-SDK compression/restore and real-platform acceptance in
+      the preview. The existing-runtime subset benchmark and synthetic cache
+      tests are separate evidence; they do not prove every complete SDK package
+      will meet the savings/restore thresholds.
 
 Acceptance: update a managed ADB installation without changing scrcpy, credentials,
 pairing keys, or active sessions; failed activation retains the working version.
-Google's release notes list **37.0.3 (November 2026)** at backlog creation; discover
-the latest stable version at implementation time instead of hard-coding this.
+Live public-metadata checks confirmed ADB **37.0.3** and scrcpy **5.0.1**, plus a
+selected older scrcpy checksum lookup, without downloading executables or changing
+ADB/server/phone state. Discovery remains dynamic. The cache feasibility sample
+used only the existing preview's ADB subset: 9,996,465 bytes compressed to 4,572,608
+bytes (54.3% saved); three verified restores took 618/669/636 ms. This is not a
+full SDK-package benchmark or final cache acceptance.
 
-Source starting points: `application/src-tauri/src/downloader.rs`,
-`application/app/composables/scrcpy_release.ts`, and item 01's lifecycle code.
+Source: native `tool_catalog.rs`, `adb_installer.rs`, `downloader.rs`, activation
+commands in `lib.rs`, `scrcpy_release.ts`, and item 01's lifecycle code.
 
 ### 03. Native automatic unlock, detection, and future unlock methods
 
@@ -360,21 +394,24 @@ This is a prerequisite for dependable native unlock and useful ADB error status.
       failure must not destroy the working copy.
 
 The original-code review fixed these two inherited behaviors with isolated
-regressions; see [BUG_REVIEW.md](BUG_REVIEW.md). The automatic-update/version-choice
-features below remain separate future work.
+regressions; see [BUG_REVIEW.md](BUG_REVIEW.md). The version-choice safeguards
+below are now implemented in source; final integrated acceptance remains open.
 
-- [ ] After a successful manual ADB or scrcpy version change, automatically
-      disable automatic updates so the selected version is retained. Persist
-      and clearly show that choice; re-enabling automatic updates must be
+- [x] After a successful manual ADB or scrcpy version change, automatically
+      disable that tool's automatic installation so the selected version is
+      retained. Persist and clearly show that choice; re-enabling installation must be
       deliberate. Cancelled or failed changes leave the previous update setting
       intact. Keep automatic checking distinct from automatic installation, and
       retain the explicit manual check from item 15.
-- [ ] Before activating an older ADB or scrcpy version, show an explicit
+- [x] Before activating an older ADB or scrcpy version, show an explicit
       **Downgrade ADB?** or **Downgrade scrcpy?** warning with the current and
       requested versions. Explain potential compatibility/security regressions
-      and that automatic updates will be disabled after the change. Require
+      and that this tool's automatic installation will be disabled after the change. Require
       confirmation; cancellation leaves executables and preferences unchanged.
       Compare actual release/build versions rather than ADB's protocol version.
+      An unknown current/target version requires a separate confirmation rather
+      than being interpreted as zero. Cancelled prompts perform no download,
+      restore, path change, or update-preference change.
 - [ ] Verify upgrades, downgrades, unchanged-version selections, warning
       confirmation/cancellation, failed activation, saved update preferences
       after restart, and manual checks while automatic updates are disabled.
@@ -549,13 +586,14 @@ file deleted afterward stays explicitly custom/unavailable. Reset is per tool.
 
 ### 15. Automatic and manual update checks
 
-The owner requested the automatic-check label and manual button now, using only
-the existing SCRCPY+ check. Expanded ADB/scrcpy update checks remain deferred.
+The checker now includes SCRCPY+, ADB, and scrcpy. SCRCPY+ retains its existing
+upstream release feed and download link; it does not automatically replace this
+fork's application binary. Tool installation has separate Advanced opt-ins.
 
 The agreed labels are **Automatically check for updates** for the toggle and
 **Check for updates** for the manual button.
 
-- [ ] Make the setting cover **both ADB and scrcpy updates**, in addition to the
+- [x] Make the setting cover **both ADB and scrcpy updates**, in addition to the
       existing SCRCPY+ app update check. Use the official Google Platform-Tools
       source for ADB and official Genymobile releases for scrcpy, with separate
       installed/available versions and results for each component.
@@ -568,7 +606,7 @@ The agreed labels are **Automatically check for updates** for the toggle and
       SCRCPY+ release source and show progress, available/current results, or an
       error with retry. Share pending checks across pages and disable duplicate
       requests. Manual checking does not install updates or replace executables.
-- [ ] Extend the manual button to ADB and scrcpy with the expanded checker;
+- [x] Extend the manual button to ADB and scrcpy with the expanded checker;
       show separate installed/available versions, results, and errors per component.
 - [x] Rename **Do not check for updates** to **Check for updates** and invert
       the checkbox/storage logic to match: checked enables checks, unchecked
@@ -581,10 +619,15 @@ The agreed labels are **Automatically check for updates** for the toggle and
       defaults, both legacy values, checkbox changes, and persistence after restart;
       disabled automatic checks issue no SCRCPY+ release request. Keep checking
       separate from installation: this checkbox does not install or replace tools.
-- [ ] When the expanded update work is implemented, apply this preference to all
-      covered components and verify that disabling automatic checks prevents
-      background release requests for SCRCPY+, ADB, and scrcpy, while explicit
-      manual checks remain available and work normally.
+- [x] Apply the automatic-check preference to all covered components. Disabling
+      it prevents background release requests for SCRCPY+, ADB, and scrcpy, while explicit
+      manual checks remain available and leave the saved preference unchanged.
+      Each component reports its own version/result/error so an unavailable
+      source does not hide successful checks for the other components. Shared
+      pending state prevents duplicate checks. Manual checks do not install.
+- [ ] Record the final integrated native/UI acceptance results, including partial
+      source failures, disabled automatic checks, explicit manual checks, idle
+      installation, custom paths, downgrade cancellation, and restart persistence.
 
 ### 16. Keep the viewport steady when toggling advanced controls
 

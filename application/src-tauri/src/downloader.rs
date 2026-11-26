@@ -3,10 +3,13 @@ use std::fs;
 use std::io::{ Cursor, Read };
 use std::path::{ Path, PathBuf };
 use std::sync::{ Mutex, atomic::{ AtomicU64, Ordering } };
+#[cfg(test)]
 use std::time::Duration;
+use std::collections::HashSet;
 
 // Only allow downloads from the official scrcpy release host
 const ALLOWED_PREFIX: &str = "https://github.com/Genymobile/scrcpy/releases/download/";
+#[cfg(test)]
 const MAX_DOWNLOAD: u64 = 512 * 1024 * 1024;
 static INSTALLING: Mutex<()> = Mutex::new(());
 static TEMPORARY_ID: AtomicU64 = AtomicU64::new(0);
@@ -114,21 +117,25 @@ fn activate_directory(stage: &Path, dest: &Path, backup: &mut TemporaryDirectory
   Ok(())
 }
 
-fn install_archive(base: &Path, url: &str, version: &str, bytes: Vec<u8>) -> Result<Value, String> {
+#[cfg(test)]
+pub(crate) fn install_archive(base: &Path, url: &str, version: &str, bytes: Vec<u8>) -> Result<Value, String> {
+  install_archive_with_policy(base, url, version, bytes, true)
+}
+
+fn install_archive_with_policy(base: &Path, url: &str, version: &str, bytes: Vec<u8>, replace: bool) -> Result<Value, String> {
   validate_version(version)?;
   let root = base.join("scrcpy");
   let dest = root.join(version);
   check_directory(&root)?;
   check_directory(&dest)?;
+  if !replace && dest.exists() { return Err("This version is already kept locally. Reuse the verified copy; existing files will not be overwritten.".into()); }
   fs::create_dir_all(&root).map_err(|e| e.to_string())?;
   let stage = TemporaryDirectory::new(&root)?;
 
   if url.ends_with(".zip") {
-    zip::ZipArchive::new(Cursor::new(bytes)).map_err(|e| e.to_string())?
-      .extract(&stage.path).map_err(|e| e.to_string())?;
+    crate::adb_installer::extract_zip(&bytes, &stage.path)?;
   } else {
-    tar::Archive::new(flate2::read::GzDecoder::new(Cursor::new(bytes)))
-      .unpack(&stage.path).map_err(|e| e.to_string())?;
+    extract_tar(bytes, &stage.path)?;
   }
 
   let ext = if cfg!(windows) { ".exe" } else { "" };
@@ -150,8 +157,12 @@ fn install_archive(base: &Path, url: &str, version: &str, bytes: Vec<u8>) -> Res
 
   let scrcpy = dest.join(scrcpy.strip_prefix(&stage.path).map_err(|e| e.to_string())?);
   let adb = dest.join(adb.strip_prefix(&stage.path).map_err(|e| e.to_string())?);
-  let mut backup = TemporaryDirectory::new(&root)?;
-  activate_directory(&stage.path, &dest, &mut backup, |from, to| fs::rename(from, to))?;
+  if replace {
+    let mut backup = TemporaryDirectory::new(&root)?;
+    activate_directory(&stage.path, &dest, &mut backup, |from, to| fs::rename(from, to))?;
+  } else {
+    fs::rename(&stage.path, &dest).map_err(|error| format!("Could not keep the new version. Existing packages were preserved: {}", error))?;
+  }
 
   Ok(json!({
     "scrcpy_path": scrcpy.to_string_lossy(),
@@ -159,6 +170,30 @@ fn install_archive(base: &Path, url: &str, version: &str, bytes: Vec<u8>) -> Res
   }))
 }
 
+fn extract_tar(bytes: Vec<u8>, stage: &Path) -> Result<(), String> {
+  let decoder = flate2::read::GzDecoder::new(Cursor::new(bytes));
+  let mut archive = tar::Archive::new(decoder.take(1024 * 1024 * 1024 + 1));
+  let mut seen = HashSet::new();
+  let mut total = 0u64;
+  for (index, entry) in archive.entries().map_err(|error| error.to_string())?.enumerate() {
+    if index >= 4096 { return Err("The archive contains too many entries.".into()); }
+    let mut entry = entry.map_err(|error| error.to_string())?;
+    let kind = entry.header().entry_type();
+    if !kind.is_file() && !kind.is_dir() { return Err("Archive links and special files are not supported.".into()); }
+    let path = entry.path().map_err(|error| error.to_string())?.into_owned();
+    if path.components().any(|part| !matches!(part, std::path::Component::Normal(_) | std::path::Component::CurDir))
+      || path.to_string_lossy().contains(['\\', ':']) || !seen.insert(path.to_string_lossy().to_lowercase()) {
+      return Err("The archive contains an unsafe or duplicate path.".into());
+    }
+    let size = entry.size();
+    total = total.checked_add(size).ok_or("The archive is too large.")?;
+    if size > 256 * 1024 * 1024 || total > 1024 * 1024 * 1024 { return Err("The archive exceeds extraction limits.".into()); }
+    if !entry.unpack_in(stage).map_err(|error| error.to_string())? { return Err("The archive path is outside its staging directory.".into()); }
+  }
+  Ok(())
+}
+
+#[cfg(test)]
 fn read_archive(reader: impl Read, limit: u64) -> Result<Vec<u8>, String> {
   let mut bytes = Vec::new();
   reader.take(limit + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
@@ -166,6 +201,7 @@ fn read_archive(reader: impl Read, limit: u64) -> Result<Vec<u8>, String> {
   Ok(bytes)
 }
 
+#[cfg(test)]
 pub fn download_and_extract(base: &Path, url: &str, version: &str) -> Result<Value, String> {
   validate_version(version)?;
   validate_release_url(url, version)?;
@@ -173,6 +209,69 @@ pub fn download_and_extract(base: &Path, url: &str, version: &str) -> Result<Val
   let response = ureq::get(url).config().timeout_global(Some(Duration::from_secs(60))).build().call().map_err(|e| e.to_string())?;
   let bytes = read_archive(response.into_body().into_reader(), MAX_DOWNLOAD)?;
   install_archive(base, url, version, bytes)
+}
+
+pub fn download_verified(base: &Path, release: &crate::tool_catalog::Release) -> Result<Value, String> {
+  validate_version(&release.version)?;
+  validate_release_url(&release.url, &release.version)?;
+  let _installing = INSTALLING.try_lock().map_err(|_| "A tool installation is already in progress.")?;
+  let bytes = crate::adb_installer::download_bytes(release)?;
+  install_archive_with_policy(base, &release.url, &release.version, bytes, false)
+}
+
+pub fn kept_version(base: &Path, version: &str) -> Result<Option<Value>, String> {
+  validate_version(version)?;
+  let root = base.join("scrcpy");
+  check_directory(&root)?;
+  let directory = root.join(version);
+  check_directory(&directory)?;
+  Ok(kept_package(&directory, version))
+}
+
+pub fn kept_versions(base: &Path) -> Result<Vec<Value>, String> {
+  let root = base.join("scrcpy");
+  check_directory(&root)?;
+  if !root.is_dir() { return Ok(Vec::new()); }
+  let mut versions = Vec::new();
+  for entry in fs::read_dir(&root).map_err(|error| error.to_string())?.take(128).flatten() {
+    let version = entry.file_name().to_string_lossy().to_string();
+    if validate_version(&version).is_err() || crate::tool_catalog::compare_versions(&version, &version).is_none() { continue; }
+    let directory = entry.path();
+    if check_directory(&directory).is_err() { continue; }
+    if let Some(package) = kept_package(&directory, &version) { versions.push(package); }
+  }
+  versions.sort_by(|a, b| crate::tool_catalog::compare_versions(b["version"].as_str().unwrap_or_default(), a["version"].as_str().unwrap_or_default()).unwrap_or(std::cmp::Ordering::Equal));
+  Ok(versions)
+}
+
+fn kept_package(directory: &Path, version: &str) -> Option<Value> {
+  let ext = if cfg!(windows) { ".exe" } else { "" };
+  let scrcpy = find_file(directory, &format!("scrcpy{}", ext))?;
+  let adb = find_file(directory, &format!("adb{}", ext))?;
+  let parent = scrcpy.parent()?;
+  if !["scrcpy-server", "scrcpy-server.jar"].iter().any(|name| required_file(&parent.join(name)).is_ok()) { return None; }
+  #[cfg(windows)]
+  if ["AdbWinApi.dll", "AdbWinUsbApi.dll"].iter().any(|name| required_file(&adb.parent().unwrap().join(name)).is_err()) { return None; }
+  // Pre-updater packages lack a new receipt. Verify the native executable's
+  // actual version; a directory name alone is not evidence of a valid package.
+  let actual = crate::system_command::inspect_tool_version("scrcpy", scrcpy.to_str()).ok().flatten()?;
+  if crate::tool_catalog::compare_versions(&actual, version) != Some(std::cmp::Ordering::Equal) { return None; }
+  Some(json!({ "version": version, "scrcpy_path": scrcpy.to_string_lossy(), "adb_path": adb.to_string_lossy() }))
+}
+
+pub fn verify_kept(base: &Path, path: &str) -> Result<(), String> {
+  let root = base.join("scrcpy");
+  check_directory(&root)?;
+  let canonical_root = root.canonicalize().map_err(|_| "The kept scrcpy directory is unavailable.")?;
+  let target = Path::new(path).canonicalize().map_err(|_| "The selected scrcpy executable is unavailable.")?;
+  let relative = target.strip_prefix(&canonical_root).map_err(|_| "The kept package is outside application storage.")?;
+  let version = relative.components().next().and_then(|part| part.as_os_str().to_str()).ok_or("The kept version could not be verified.")?;
+  validate_version(version)?;
+  let directory = root.join(version);
+  check_directory(&directory)?;
+  let package = kept_package(&directory, version).ok_or("The kept scrcpy package is incomplete or its version changed.")?;
+  if package["scrcpy_path"].as_str().and_then(|path| Path::new(path).canonicalize().ok()).as_ref() != Some(&target) { return Err("The kept scrcpy executable changed.".into()); }
+  Ok(())
 }
 
 #[cfg(test)]
@@ -251,6 +350,41 @@ mod tests {
     }
     assert!(validate_version("v5.0.1").is_ok());
     assert!(validate_version("5.0.1-rc1").is_ok());
+  }
+
+  #[test]
+  fn verified_update_installation_never_overwrites_a_retained_package() {
+    let base = TestDirectory::new();
+    let destination = previous_install(&base.path);
+    assert!(install_archive_with_policy(&base.path, "package.zip", "v1.0", archive(None), false).is_err());
+    only_previous_remains(&base.path, &destination);
+  }
+
+  #[test]
+  fn a_directory_name_or_incomplete_kept_runtime_is_not_an_installed_version() {
+    let base = TestDirectory::new();
+    let destination = previous_install(&base.path);
+    assert!(kept_version(&base.path, "v1.0").unwrap().is_none());
+    assert!(kept_versions(&base.path).unwrap().is_empty());
+    only_previous_remains(&base.path, &destination);
+  }
+
+  #[test]
+  #[ignore = "Copies an explicitly supplied local scrcpy runtime into a disposable version directory and checks offline discovery; only --version is executed"]
+  fn existing_runtime_is_listed_and_verified_offline_without_a_new_receipt() {
+    let source = PathBuf::from(std::env::var("SCRCPY_PLUS_TEST_KEPT_RUNTIME").expect("Select the local test runtime explicitly."));
+    let base = TestDirectory::new();
+    let package = base.path.join("scrcpy/v5.0.1/package");
+    fs::create_dir_all(&package).unwrap();
+    for entry in fs::read_dir(&source).unwrap().flatten() {
+      if entry.file_type().unwrap().is_file() { fs::copy(entry.path(), package.join(entry.file_name())).unwrap(); }
+    }
+    let kept = kept_versions(&base.path).unwrap();
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0]["version"], "v5.0.1");
+    verify_kept(&base.path, kept[0]["scrcpy_path"].as_str().unwrap()).unwrap();
+    assert!(kept_version(&base.path, "v5.0.1").unwrap().is_some());
+    println!("Retained scrcpy 5.0.1 discovered and validated offline; no download, selected-tool change, ADB server command, or phone access.");
   }
 
   #[test]

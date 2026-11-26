@@ -22,11 +22,11 @@ for (const disabled of [true, false]) {
         await button.focus();
         await button.press("Enter");
         await expect(button).toBeDisabled();
-        await expect(page.getByRole("status")).toHaveText("Checking for SCRCPY+ updates…");
+        await expect(page.getByRole("status")).toHaveText("Checking for SCRCPY+, ADB and scrcpy updates…");
         await button.evaluate(button => { button.click(); button.click(); });
         await expect.poll(() => requests.length).toBe(1);
         finish();
-        await expect(page.getByRole("status")).toHaveText("SCRCPY+ is up to date.");
+        await expect(page.getByRole("status")).toHaveText("SCRCPY+, ADB and scrcpy are up to date.");
         await expect(button).toBeEnabled();
         expect(requests).toEqual([releases_url]);
         expect(await page.evaluate(() => localStorage.getItem("setting.disable_update_check"))).toBe(String(disabled));
@@ -88,11 +88,11 @@ test("a failed check reports an error and can be retried without automatic HTTP 
     await page.goto("/settings");
     const button = page.getByRole("button", { name: "Check for updates", exact: true });
     await button.click();
-    await expect(page.getByRole("alert")).toHaveText("Could not check for SCRCPY+ updates. Check your connection and try again.");
+    await expect(page.getByRole("alert")).toHaveText("Some update checks could not be completed. Check your connection and try again.");
     await expect(button).toBeEnabled();
     expect(requests).toBe(1);
     await button.click();
-    await expect(page.getByRole("status")).toHaveText("SCRCPY+ is up to date.");
+    await expect(page.getByRole("status")).toHaveText("SCRCPY+, ADB and scrcpy are up to date.");
     await expect(page.getByRole("alert")).toHaveCount(0);
     expect(requests).toBe(2);
 });
@@ -102,8 +102,8 @@ test("a feed without a stable release does not claim the app is up to date", asy
     await mock(page);
     await page.goto("/settings");
     await page.getByRole("button", { name: "Check for updates", exact: true }).click();
-    await expect(page.getByRole("alert")).toContainText("Could not check for SCRCPY+ updates.");
-    await expect(page.getByText("SCRCPY+ is up to date.", { exact: true })).toHaveCount(0);
+    await expect(page.getByRole("alert")).toContainText("Some update checks could not be completed.");
+    await expect(page.getByText("SCRCPY+, ADB and scrcpy are up to date.", { exact: true })).toHaveCount(0);
 });
 
 for (const scenario of [

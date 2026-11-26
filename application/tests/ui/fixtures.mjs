@@ -25,7 +25,15 @@ export async function mock(page, options = {}) {
         Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: async text => { state.clipboard = text; } } });
         window.__TAURI_INTERNALS__ = { invoke: async (command, args = {}) => {
             state.calls.push({ command, args });
-            if (command === "set_binary_paths") { state.binary_requests = { scrcpy_path: args.scrcpyPath, adb_path: args.adbPath }; return; }
+            if (command === "set_binary_paths" || command === "activate_tool_paths") { state.binary_requests = { scrcpy_path: args.scrcpyPath, adb_path: args.adbPath }; return; }
+            if (command === "get_tool_updates") return state.tool_updates || [];
+            if (command === "get_tool_releases") return state.tool_releases?.[args.tool] || [];
+            if (command === "get_installed_adb") return state.installed_adb || [];
+            if (command === "get_installed_scrcpy") return state.installed_scrcpy || [];
+            if (command === "inspect_tool_version") return state.inspect_versions?.[args.tool] || (args.tool === "adb" ? "37.0.3" : "5.0.1");
+            if (command === "download_adb") return { adb_path: `C:\\AppData\\adb\\${args.version}\\platform-tools\\adb.exe`, version: args.version };
+            if (command === "restore_adb") return { adb_path: `C:\\AppData\\adb\\${args.version}\\platform-tools\\adb.exe`, version: args.version, restored: true };
+            if (command === "compact_adb_cache") return { compressed: 0 };
             if (command === "get_binary_paths") {
                 const result = {};
                 for (const key of ["scrcpy_path", "adb_path"]) {
