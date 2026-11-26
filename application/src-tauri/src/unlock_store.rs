@@ -401,6 +401,33 @@ mod tests {
 
     fn binding() -> Binding { Binding { identity: "[\"synthetic-serial\",\"synthetic-vendor\",\"synthetic-product\"]".into(), user: 0 } }
     fn store() -> Store<FakeVault> { Store { vault: FakeVault::default() } }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "Opt-in native vault round trip using a unique synthetic binding; never reads real device records and removes its own test records"]
+    fn native_synthetic_record_round_trip_and_cleanup() {
+        assert_eq!(std::env::var("SCRCPY_PLUS_TEST_VAULT").as_deref(), Ok("1"));
+        let binding = Binding { identity: format!("synthetic-native-vault-test-{}-{}", std::process::id(), native::generation().unwrap()), user: 0 };
+        assert!(metadata(&binding).unwrap().is_none());
+        struct Cleanup(Binding);
+        impl Drop for Cleanup { fn drop(&mut self) { let _ = remove(&self.0); } }
+        let _cleanup = Cleanup(binding.clone());
+        let enrolled = enroll(&binding, "Synthetic vault test only").unwrap();
+        assert!(!enrolled.enabled && !enrolled.blocked && !enrolled.invalidated);
+        let enabled = set_enabled(&binding, true).unwrap();
+        assert!(enabled.enabled);
+        assert!(password(&enabled).is_err());
+        let attempt = set_blocked(&binding, true).unwrap();
+        let secret = password(&attempt).unwrap();
+        assert_eq!(secret.value, "Synthetic vault test only");
+        drop(secret);
+        set_blocked(&binding, false).unwrap();
+        invalidate(&binding).unwrap();
+        assert!(set_enabled(&binding, true).is_err());
+        remove(&binding).unwrap();
+        assert!(metadata(&binding).unwrap().is_none());
+        println!("Native Windows vault round trip, attempt block, invalidation, and synthetic-record cleanup verified.");
+    }
     fn enroll_enabled(store: &mut Store<FakeVault>, binding: &Binding) -> Metadata {
         store.enroll(binding, "synthetic password").unwrap();
         store.set_enabled(binding, true).unwrap()

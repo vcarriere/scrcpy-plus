@@ -118,9 +118,13 @@ mirrors/processes or stop the shared ADB server.
 
 Verification at this checkpoint:
 
-- The native suite has 106 passing tests and 14 opt-in tests excluded.
+- The native suite has 106 passing tests and 16 opt-in tests excluded.
   Synthetic checks cover storage/generation/attempt invariants, method parsing,
   identity/focus/privacy guards, replay ordering, cancellation, and safe recovery.
+- The opt-in Windows Credential Manager round trip passed using a unique synthetic
+  binding. It verified native enrollment, enablement, attempt blocking, secret
+  retrieval, method invalidation, and deletion of its own test records. It did not
+  read or alter any real-device credential record.
 - The frontend generated successfully. All 87 UI tests passed, including 17
   unlock tests. Old positional Display Settings selectors were repaired to
   accommodate the additional section. The narrow synthetic preview was
@@ -139,6 +143,20 @@ Verification at this checkpoint:
   cold boot/reconnect, privacy transitions, interrupted input/manual recovery,
   and reopened-mirror responsiveness still need scoped real-device acceptance
   after local enrollment.
+
+Portable preview v18 was built from clean code commit
+`85c8f7b4d76fc761f88cdf3567b7e9cb0712fde5`. Its 18 manifest hashes and Windows x64
+GUI executable format passed verification. The separate preview profile is
+`me.vcarriere.scrcpy-plus.preview`; the installed app and helper are unchanged.
+Subsequent additions are documentation and test-only code: the synthetic native
+vault probe and an explicit-enrollment startup-unlock harness. They do not change
+the v18 runtime. The password harness is compiled but has not been run; it requires
+`SCRCPY_PLUS_TEST_PASSWORD=1`, `SCRCPY_PLUS_TEST_VIDEO=1`, explicitly selected test
+executables, and a locally enrolled/enabled, unblocked password. It permits a
+bounded guarded attempt, renders the reopened mirror offscreen, stops its owned
+session, and restores the initially sleeping phone. An uncertain attempt remains
+blocked and is never automatically retried by the harness. No password is passed
+through the environment, command line, tool output, or chat.
 
 Security limits: OS protection is not immutable storage or rollback attestation.
 The app cannot exclude other authorized ADB clients, physical touch, code running

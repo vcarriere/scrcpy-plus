@@ -591,4 +591,60 @@ mod tests {
         assert_eq!(restored.panel, initial.panel, "Restore the original physical panel state.");
         result.unwrap();
     }
+
+    #[test]
+    #[ignore = "Requires explicit locally enrolled/enabled password and testing authorization; performs one guarded native startup unlock in a headless mirror, then restores sleep"]
+    fn live_enrolled_password_startup_unlock() {
+        use std::sync::{ Arc, atomic::AtomicBool };
+        assert_eq!(std::env::var("SCRCPY_PLUS_TEST_PASSWORD").as_deref(), Ok("1"));
+        assert_eq!(std::env::var("SCRCPY_PLUS_TEST_VIDEO").as_deref(), Ok("1"));
+        let target = live_target();
+        let initial = unlock_detection::snapshot(&target, &mut || false).unwrap();
+        assert!(initial.safe_locked && !initial.awake && initial.method == "password", "Leave the selected Pixel locked and asleep for the controlled startup test.");
+        let metadata = unlock_store::metadata(&target.binding).unwrap().expect("Enroll locally in the masked app fields first.");
+        assert!(metadata.enabled && !metadata.blocked && !metadata.invalidated, "Enable the local enrollment and resolve any previous attempt block before testing.");
+        let _session = adb_server::begin(true).unwrap();
+        let identity = target.binding.identity.clone();
+        let finished = Arc::new(AtomicBool::new(false));
+        let entered = Arc::new(AtomicBool::new(false));
+        let verified = Arc::new(AtomicBool::new(false));
+        let flags = (finished.clone(), entered.clone(), verified.clone());
+        let watcher = std::thread::spawn(move || {
+            let deadline = Instant::now() + Duration::from_secs(90);
+            let mut success_at = None;
+            while !flags.0.load(Ordering::SeqCst) && Instant::now() < deadline {
+                if let Some(status) = screen_power::status_for(&identity) {
+                    if status.unlock_state == Some("unlocking") { flags.1.store(true, Ordering::SeqCst); }
+                    if status.unlock_state == Some("blocked") { let _ = screen_power::stop(&identity); return; }
+                    if flags.1.load(Ordering::SeqCst) && status.unlock_state == Some("monitoring") && screen_power::video_samples() > 0 {
+                        success_at.get_or_insert(Instant::now());
+                    }
+                }
+                if success_at.is_some_and(|start| start.elapsed() >= Duration::from_secs(4)) {
+                    flags.2.store(true, Ordering::SeqCst);
+                    let _ = screen_power::stop(&identity);
+                    return;
+                }
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            if !flags.0.load(Ordering::SeqCst) { let _ = screen_power::stop(&identity); }
+        });
+        let executable = std::env::var("SCRCPY_PLUS_TEST_SCRCPY").unwrap();
+        let args = vec!["-s", target.selection.serial.as_str(), "--turn-screen-off", "--no-audio"];
+        let result = run(&executable, args, target.clone(), false);
+        finished.store(true, Ordering::SeqCst);
+        watcher.join().unwrap();
+        let after = unlock_detection::snapshot(&target, &mut || false);
+        let final_metadata = unlock_store::metadata(&target.binding);
+        // A failed or uncertain attempt stays blocked. This restores sleep only;
+        // it never clears attempt state, retrieves another secret, or retries.
+        unlock_detection::query(&target, "input -d 0 keyevent 223", &mut || false).unwrap();
+        result.unwrap();
+        assert!(entered.load(Ordering::SeqCst), "No native password attempt was observed.");
+        assert!(verified.load(Ordering::SeqCst), "Native unlock and mirror startup were not verified; do not retry automatically.");
+        assert!(after.unwrap().unlocked, "The same owner was not verified unlocked after native input.");
+        assert!(!final_metadata.unwrap().unwrap().blocked);
+        assert!(!unlock_detection::snapshot(&target, &mut || false).unwrap().awake);
+        println!("Native enrolled-password startup unlock verified; owned headless mirror stopped and sleep restored. No credential output or recording.");
+    }
 }

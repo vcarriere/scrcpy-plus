@@ -21,6 +21,9 @@ static SESSIONS: Mutex<Option<HashMap<u64, Session>>> = Mutex::new(None);
 #[cfg(test)]
 static VIDEO_FRAMES: Mutex<Vec<(Instant, u32)>> = Mutex::new(Vec::new());
 
+#[cfg(test)]
+pub(crate) fn video_samples() -> usize { VIDEO_FRAMES.lock().unwrap().len() }
+
 #[derive(Clone, Serialize)]
 pub struct Status {
     pub id: u64,
