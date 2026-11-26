@@ -262,6 +262,7 @@ pub fn scrcpy(args: Vec<&str>) -> Result<String, String> {
 pub fn run_scrcpy(args: Vec<&str>, automatic_screen: bool, selection: Option<&crate::device_inventory::Selection>) -> Result<String, String> {
     let _session = adb_server::begin(true)?;
     let command = scrcpy_path();
+    crate::launch_progress::update("preparing", "checking_unlock_configuration");
     // Verified sessions across copies of this app share the same phone lease.
     // An ordinary mirror must not coexist with another copy's private replay.
     let _ownership = if crate::unlock_store::supported() {

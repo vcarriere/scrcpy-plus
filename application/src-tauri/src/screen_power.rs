@@ -380,9 +380,14 @@ fn spawn(executable: &str, args: &[&str], prepared: &Prepared) -> Result<Child, 
 }
 
 pub(crate) fn spawn_client(executable: &str, args: &[&str], client: &AdbClient) -> Result<Child, String> {
+    let progress = crate::launch_progress::current();
+    let capture = progress.is_some();
+    #[cfg(test)]
+    let capture = capture || std::env::var("SCRCPY_PLUS_TEST_VIDEO").as_deref() == Ok("1");
     let mut command = Command::new(executable);
     command.args(args).env("ADB", &client.path).env("ADB_SERVER_SOCKET", &client.socket)
-        .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        .stdin(Stdio::null()).stdout(if capture { Stdio::piped() } else { Stdio::null() })
+        .stderr(if capture { Stdio::piped() } else { Stdio::null() });
     #[cfg(windows)]
     command.creation_flags(0x08000000);
     #[cfg(test)]
@@ -392,28 +397,31 @@ pub(crate) fn spawn_client(executable: &str, args: &[&str], client: &AdbClient) 
         command.args(["--render-driver=software", "--max-fps=30", "--print-fps"])
             .env("SDL_VIDEODRIVER", "dummy").env("SDL_AUDIODRIVER", "dummy").stdout(Stdio::piped()).stderr(Stdio::piped());
     }
-    let child = command.spawn().map_err(|_| "Could not launch the selected scrcpy executable.")?;
-    #[cfg(test)]
-    let mut child = child;
-    #[cfg(test)]
+    let mut child = command.spawn().map_err(|_| "Could not launch the selected scrcpy executable.")?;
+    let generation = progress.as_ref().map(|reporter| reporter.mirror_start()).unwrap_or(0);
     if let Some(stdout) = child.stdout.take() {
+        let progress = progress.clone();
         std::thread::spawn(move || {
-            use std::io::{ BufRead, BufReader };
-            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                if line.contains("fps") || line.contains("ERROR") || line.contains("Renderer:") || line.contains("Texture:") { println!("Offscreen video: {}", line); }
-                if let Some(fps) = line.strip_prefix("INFO: ").and_then(|line| line.split_once(" fps")).and_then(|(fps, _)| fps.parse::<u32>().ok()) {
-                    VIDEO_FRAMES.lock().unwrap().push((Instant::now(), fps));
+            crate::launch_progress::drain(stdout, progress.as_ref(), generation, |_line| {
+                #[cfg(test)]
+                if std::env::var("SCRCPY_PLUS_TEST_VIDEO").as_deref() == Ok("1") {
+                    let line = String::from_utf8_lossy(_line);
+                    if line.contains("fps") || line.contains("ERROR") || line.contains("Renderer:") || line.contains("Texture:") { println!("Offscreen video: {}", line); }
+                    if let Some(fps) = line.strip_prefix("INFO: ").and_then(|line| line.split_once(" fps")).and_then(|(fps, _)| fps.parse::<u32>().ok()) {
+                        VIDEO_FRAMES.lock().unwrap().push((Instant::now(), fps));
+                    }
                 }
-            }
+            });
         });
     }
-    #[cfg(test)]
     if let Some(stderr) = child.stderr.take() {
         std::thread::spawn(move || {
-            use std::io::{ BufRead, BufReader };
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
-                if line.contains("ERROR") { println!("Offscreen video: {}", line); }
-            }
+            crate::launch_progress::drain(stderr, progress.as_ref(), generation, |_line| {
+                #[cfg(test)]
+                if std::env::var("SCRCPY_PLUS_TEST_VIDEO").as_deref() == Ok("1") && _line.windows(5).any(|word| word == b"ERROR") {
+                    println!("Offscreen video: {}", String::from_utf8_lossy(_line));
+                }
+            });
         });
     }
     Ok(child)
@@ -528,6 +536,7 @@ pub fn run(executable: &str, args: Vec<&str>) -> Result<String, String> {
 
 fn run_session(executable: &str, args: Vec<&str>, limit: Option<Duration>) -> Result<String, String> {
     let preparing = Preparation::begin()?;
+    crate::launch_progress::update("preparing", "preparing_screen_control");
     let prepared = prepare(executable, &args)?;
     let registration = Registration::new(&prepared.device, &prepared.identity)?;
     let mut monitor = Monitor::from_prepared(executable, prepared)?;

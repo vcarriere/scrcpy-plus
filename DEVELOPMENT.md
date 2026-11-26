@@ -62,6 +62,43 @@ device labels/grouping, and full child-process cancellation as backlog work.
 Later checkpoints below record the implemented additions and their distinct
 source, simulated, and live verification limits.
 
+## Startup progress checkpoint — November 26, 2026
+
+Start SCRCPY now immediately opens a themed progress panel with a rotating ring
+and the actual current step. Connection validation, screen preparation, private
+password entry, verification, screen-off restoration, and video startup report
+coarse native phases. Manual recovery replaces the spinner with instructions in
+the same panel. Progress can be hidden/reopened and survives page navigation;
+a subsequent private relock/manual-recovery state can reopen it. Reduced motion
+stops rotation while preserving the visible indicator and text.
+
+`launch_progress.rs` scopes an optional launch ID to the existing owned session.
+`get_scrcpy_progress` reads host memory only; polling introduces no new ADB or
+phone queries. Raw child output is drained continuously with bounded lines and
+is never returned or retained as progress. A decoded-video texture marker from
+the owned scrcpy child confirms readiness, independently of phone unlock. Late
+markers cannot override a new child, private entry, manual recovery, or a finished
+session. Quiet/custom launches remain explicitly unconfirmed after ten seconds;
+spawning a process alone does not close the progress panel as successful video.
+
+The exact marker forms were checked against the official scrcpy 5.0.1
+[software interop](https://github.com/Genymobile/scrcpy/blob/v5.0.1/app/src/interop/interop_software.c)
+and its D3D11VA/VA-API/VideoToolbox siblings. This is an output-format reference,
+not copied implementation. Existing password guards, per-character state checks,
+deliberate waits, and attempt blocking are unchanged. These checks can add time
+before the visible mirror opens; this change supplies progress rather than an
+unmeasured speed improvement.
+
+Verification: **141 native tests passed**, with 21 environment/opt-in tests
+ignored by the default run; **127 headless UI tests passed**. Coverage includes
+readiness versus process launch, bounded diagnostics, stale child output, manual
+recovery, hide/reopen/navigation, launch failure/retry, late IPC replies, narrow
+layout, and reduced motion. Synthetic startup/manual-recovery renders were
+inspected offscreen. No desktop, phone, ADB server, saved credential, or installed
+application was operated for these checks. Live startup timing/native password
+acceptance remains separate from these results. Preview v20 is the packaging
+target for this change.
+
 ## Component update checkpoint — November 26, 2026
 
 Update work now covers backlog 02, 07, and 15 in source. The combined checker

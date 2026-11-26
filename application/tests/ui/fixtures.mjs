@@ -103,9 +103,14 @@ export async function mock(page, options = {}) {
                 return "Synthetic device property";
             }
             if (command === "run_scrcpy") {
+                state.launch_id = args.launchId;
                 if (!state.mirror_pending) throw "Simulated launch failure";
                 if (args.automaticScreen) state.screen_sessions = [{ id: 7, device: args.args[1], state: "screen_on", reason: "protected" }];
                 return new Promise(resolve => { state.finish_mirror = () => { state.screen_sessions = []; resolve(); }; });
+            }
+            if (command === "get_scrcpy_progress") {
+                if (state.launch_progress_fail) throw "Simulated progress query failure";
+                return state.launch_progress || { phase: "ready", reason: "video_display", elapsed_ms: 500, finished: false };
             }
             throw "Unexpected command: " + command;
         } };

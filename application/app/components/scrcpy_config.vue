@@ -2,7 +2,6 @@
     <div class="card bg-base-200 w-full mb-8">
         <div class="card-body">
             <p class="card-title text-white">SCRCPY</p>
-            <p v-if="launch_error" class="text-error break-words" role="alert">{{ launch_error }}</p>
 
             <p class="mt-8 text-white">{{ $t('launch_options') }}</p>
             <template v-for="option in basic_options" :key="option.arg">
@@ -92,15 +91,15 @@
             </div>
 
             <button class="btn btn-primary text-white mt-16" :disabled="!device || running[device] || !adb_available" @click="start_scrcpy">
-                <icon name="play" size="20x20" />
-                <span>{{ $t('start') }}</span>
+                <span v-if="is_starting(device)" class="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" aria-hidden="true"></span>
+                <icon v-else name="play" size="20x20" />
+                <span>{{ is_starting(device) ? 'Starting SCRCPY…' : $t('start') }}</span>
             </button>
         </div>
     </div>
 </template>
 
 <script>
-import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 export default {
     props: ["device", "selection"],
@@ -108,14 +107,14 @@ export default {
         // Shared state so running sessions survive navigating between pages
         const running = useState("scrcpy_running", () => ({}));
         const { available: adb_available } = useAdbStatus();
-        return { running, adb_available };
+        const { is_starting, start_launch } = useScrcpyLaunch();
+        return { running, adb_available, is_starting, start_launch };
     },
     data() {
         return {
             active_args: [],
             bitrate: 8,
             automatic_screen: false,
-            launch_error: "",
             custom_flags: "",
             custom_window_name: false,
             window_title: "",
@@ -244,7 +243,6 @@ export default {
         },
         async start_scrcpy() {
             if (!this.adb_available) return;
-            this.launch_error = "";
             let scrcpy_start_args = ["-s", this.device];
 
             scrcpy_start_args.push(...this.active_args);
@@ -273,10 +271,8 @@ export default {
             if (!device || this.running[device]) return;
             this.running[device] = true;
             try {
-                await invoke("run_scrcpy", { args: scrcpy_start_args, automaticScreen: this.automatic_screen && this.screen_control_allowed, selection: this.selection });
-            } catch (e) {
-                this.launch_error = String(e);
-            } finally {
+                await this.start_launch(device, { args: scrcpy_start_args, automaticScreen: this.automatic_screen && this.screen_control_allowed, selection: this.selection });
+            } catch {} finally {
                 this.running[device] = false;
             }
         },

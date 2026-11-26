@@ -202,6 +202,15 @@ and password helper are not replaced or imported.
     Full SDK/cache acceptance and final integrated results are recorded in
     DEVELOPMENT.md; the existing-preview subset benchmark is not full-package proof.
 
+24. Starting SCRCPY immediately shows a rotating ring and the current startup
+    step. Preparation/private entry/verification/video opening should remain
+    distinguishable. Manual recovery shows instructions without an idle spinner.
+    Hide/reopen progress and navigate to Settings while the session continues.
+    The panel closes when the owned child confirms video readiness, not merely
+    when its process starts. Quiet/custom output stays explicitly unconfirmed.
+    Reduced motion keeps a static indicator. Startup progress does not remove
+    password safeguards or establish a faster live-phone unlock time.
+
 If another app starts ADB while this test app is paused, it detects the running
 server automatically, resumes device discovery, and enables Stop ADB. No GUI
 restart or manual Resume action is needed. The status check does not start or

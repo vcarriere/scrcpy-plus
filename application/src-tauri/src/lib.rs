@@ -12,6 +12,7 @@ mod unlock_detection;
 mod unlock_store;
 mod tool_catalog;
 mod adb_installer;
+mod launch_progress;
 use tauri::Manager;
 use system_command::{ scrcpy, adb };
 
@@ -248,15 +249,22 @@ async fn disconnect_device_route(selection: device_inventory::Selection) -> Resu
 }
 
 #[tauri::command]
-async fn run_scrcpy(args: Vec<String>, automatic_screen: Option<bool>, selection: Option<device_inventory::Selection>) -> Result<(), String> {
+async fn run_scrcpy(args: Vec<String>, automatic_screen: Option<bool>, selection: Option<device_inventory::Selection>, launch_id: Option<String>) -> Result<(), String> {
   // Runs on a dedicated blocking thread and resolves once the scrcpy window is closed
   tauri::async_runtime::spawn_blocking(move || {
-    let args_ref: Vec<&str> = args.iter().map(|a| a.as_str()).collect();
-    if let Some(selection) = &selection { device_inventory::validate(selection, &args_ref)?; }
-    system_command::run_scrcpy(args_ref, automatic_screen.unwrap_or(false), selection.as_ref()).map(|_| ())
+    launch_progress::run(launch_id.as_deref(), || {
+      let args_ref: Vec<&str> = args.iter().map(|a| a.as_str()).collect();
+      if let Some(selection) = &selection { device_inventory::validate(selection, &args_ref)?; }
+      system_command::run_scrcpy(args_ref, automatic_screen.unwrap_or(false), selection.as_ref()).map(|_| ())
+    })
   })
   .await
   .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn get_scrcpy_progress(launch_id: String) -> Result<Option<launch_progress::Snapshot>, String> {
+  launch_progress::get(&launch_id)
 }
 
 fn adb_status() -> Value {
@@ -408,7 +416,7 @@ pub fn run() {
     })
     .plugin(tauri_plugin_opener::init())
     .plugin(tauri_plugin_dialog::init())
-    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, environment, set_binary_paths, get_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen, control_screen_power, get_device_inventory, disconnect_device_route, inspect_unlock, enroll_unlock, set_unlock_enabled, remove_unlock, stop_unlock_session, get_tool_releases, get_installed_adb, get_installed_scrcpy, download_adb, inspect_tool_version, activate_tool_paths, get_tool_updates, restore_adb, compact_adb_cache])
+    .invoke_handler(tauri::generate_handler![get_dependency_versions, exec_adb, exec_scrcpy, run_scrcpy, get_scrcpy_progress, environment, set_binary_paths, get_binary_paths, download_scrcpy, get_adb_status, get_adb_client, control_adb, inspect_protected_screen, control_screen_power, get_device_inventory, disconnect_device_route, inspect_unlock, enroll_unlock, set_unlock_enabled, remove_unlock, stop_unlock_session, get_tool_releases, get_installed_adb, get_installed_scrcpy, download_adb, inspect_tool_version, activate_tool_paths, get_tool_updates, restore_adb, compact_adb_cache])
     .build(tauri::generate_context!())
     .expect("error while building tauri application")
     .run(|app, event| {

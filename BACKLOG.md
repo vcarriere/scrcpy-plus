@@ -214,6 +214,11 @@ a fingerprint prompt, and an app's authentication prompt is not device unlock.
       during a session, and close owned mirrors on GUI exit so privacy monitoring
       cannot leave an unmanaged mirror behind. Do not stop unrelated processes,
       mirrors, or the shared ADB server.
+- [x] Show startup immediately with a themed rotating ring and the current native
+      step: connection checks, preparation, private entry, unlock verification,
+      screen restoration, and opening video. Show manual-recovery instructions
+      in the same panel without a waiting spinner. Keep progress available across
+      navigation; distinguish a running child from confirmed video readiness.
 - [x] Use one method-aware layout and backend separation for configuration,
       enrollment, privacy, monitoring, and recovery. Detection and the enrolled
       type remain distinct; detecting a different method never converts a saved
@@ -686,6 +691,57 @@ the original-code review in item 09.
       or remove the original inactive Discord placeholder once a current official
       destination is known. Include package-install crash recovery, cross-process
       locking, decompressed-size limits, and real-release/platform acceptance.
+
+### 19. SCRCPY+ mirror window with status and privacy overlays
+
+Backlog only; implementation is deferred at the owner's request. Initial source
+and documentation review completed November 26, 2026. No wrapper prototype or
+performance benchmark has been run.
+
+- [x] Check initial feasibility. Windows supports parenting native windows, SDL3
+      can render into an existing native window, and scrcpy already handles video
+      orientation/aspect changes. This supports a Windows-first investigation;
+      it does not establish a working embedded scrcpy/Tauri combination.
+- [ ] Keep a SCRCPY+ outer mirror window present while its owned scrcpy display
+      starts, stops, reconnects, or closes for private password entry. Reuse the
+      native startup/unlock progress phases for overlays and manual guidance.
+      Keep mirror visibility, actual capture/playback, and physical phone-screen
+      power as distinct controls/states.
+- [ ] Design live, hidden/black, and optional dimmed/frozen-background states.
+      Prefer black during credential entry. Any frozen background must precede
+      private entry and stay transient; never capture or retain password frames.
+      An overlay is not a privacy boundary: retain verified capture shutdown and
+      input gating, and reveal the mirror only after safe state and fresh video
+      are confirmed. Preserve protected-screen fallback behavior.
+- [ ] Investigate hosting the existing owned native renderer first, avoiding
+      screenshot polling, another encoder, or passing every frame through JS.
+      Compare native child-window hosting with an SDL host integration before
+      committing to an architecture. The current Wry 0.57.0 Windows backend uses
+      windowed WebView2; HTML overlays over a native child cannot be assumed to
+      work correctly. Resolve native layering/composition, focus, input queues,
+      DPI compatibility, close/recreate ownership, and unsupported custom tools.
+- [ ] Preserve portrait/landscape and 180/270-degree changes, aspect fitting,
+      resizing/fullscreen, multi-monitor DPI, keyboard shortcuts, and accurate
+      mouse/touch coordinates. Block input during unsafe transitions. Keep the
+      outer window stable across inner-window recreation and reconnects.
+- [ ] Benchmark against standalone scrcpy on the same phone, codec, resolution,
+      frame rate, and connection: startup/first frame, FPS/drops, input latency,
+      CPU/GPU load, and memory, including repeated rotation and overlay/private
+      entry transitions. Native hosting should avoid a second decode/re-encode
+      path (architectural expectation, not a measured performance claim).
+      Define an acceptable regression budget from those results and preserve a
+      standalone fallback. Assess macOS/Linux separately; do not assume Win32
+      parenting applies to Cocoa or Wayland.
+
+Complexity: a Windows proof of concept is plausible; a robust integrated wrapper
+is substantial work because of composition, focus, scaling, privacy, and recovery.
+Rotation support is available upstream, but integration still needs testing.
+
+References: [Windows SetParent and DPI constraints](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setparent),
+[SDL3 native-window properties](https://wiki.libsdl.org/SDL3/SDL_CreateWindowWithProperties),
+[scrcpy 5.0.1 video/orientation](https://github.com/Genymobile/scrcpy/blob/v5.0.1/doc/video.md),
+[scrcpy screen implementation](https://github.com/Genymobile/scrcpy/blob/v5.0.1/app/src/screen.c),
+and [WebView2 hosting/composition/input tradeoffs](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/windowed-vs-visual-hosting).
 
 ## Delivery order and verification
 

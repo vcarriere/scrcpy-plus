@@ -242,6 +242,7 @@ impl<F: FnMut() -> bool> Replay for Device<'_, F> {
     }
     fn key(&mut self, key: u32) -> Result<(), String> {
         if (self.cancelled)() { return Err("Unlock cancelled.".into()); }
+        if key == 66 { crate::launch_progress::update("unlocking", "verifying_unlock"); }
         if key == 224 {
             // The shell's explicit main-display wake path is also used by the
             // proven helper. This command contains no credential data.
@@ -262,6 +263,7 @@ impl<F: FnMut() -> bool> Replay for Device<'_, F> {
     fn mark(&mut self, blocked: bool) -> Result<(), String> {
         self.metadata = unlock_store::set_blocked(&self.target.binding, blocked)?;
         self.registration.unlock(if blocked { "unlocking" } else { "monitoring" }, if blocked { "private_entry" } else { "unlock_verified" });
+        if blocked { crate::launch_progress::update("unlocking", "entering_password"); }
         Ok(())
     }
     fn password(&mut self) -> Result<Secret, String> { unlock_store::password(&self.metadata) }
@@ -284,6 +286,7 @@ struct Mirror(Option<Child>);
 impl Mirror {
     fn close(&mut self) -> Result<(), String> {
         if let Some(child) = self.0.as_mut() {
+            crate::launch_progress::mirror_closed();
             if child.try_wait().map_err(|_| "Could not inspect the owned mirror.")?.is_none() { child.kill().map_err(|_| "Could not close the mirror for private entry.")?; }
             child.wait().map_err(|_| "Could not verify that the mirror closed.")?;
             self.0 = None;
@@ -298,6 +301,7 @@ pub fn run(executable: &str, args: Vec<&str>, target: Target, automatic_screen: 
     validate_args(&args)?;
     let registration = Registration::managed(&target.selection.serial, &target.binding.identity, automatic_screen)?;
     let _lease = unlock_store::attempt_lock(&target.binding)?;
+    crate::launch_progress::update("preparing", "preparing_screen_control");
     let mut monitor = Monitor::new_pinned(executable, &args, &target)?;
     let mut mirror = Mirror(None);
     let mut next_unlock = Instant::now();
@@ -331,13 +335,19 @@ pub fn run(executable: &str, args: Vec<&str>, target: Target, automatic_screen: 
                         private_block = false;
                     }
                     registration.unlock("monitoring", "watching");
+                    crate::launch_progress::unlocked();
                     failures = 0;
                 },
-                Ok(snapshot) if metadata.blocked => { registration.unlock("blocked", "unverified_attempt"); let _ = snapshot; },
+                Ok(snapshot) if metadata.blocked => {
+                    registration.unlock("blocked", "unverified_attempt");
+                    crate::launch_progress::update("manual_unlock", "automatic_unlock_blocked");
+                    let _ = snapshot;
+                },
                 Ok(snapshot) if snapshot.safe_locked && snapshot.method == "password" => {
                     // The only mirror is closed and waited before any password
                     // retrieval. The remaining channel cannot capture video or
                     // audio and has clipboard synchronization disabled.
+                    crate::launch_progress::update("unlocking", "preparing_private_entry");
                     if mirror.close().is_err() {
                         unlock_store::set_blocked(&target.binding, true)?;
                         return Err("Could not verify that the mirror closed. Automatic unlock is blocked; close the session and unlock manually.".into());
@@ -351,24 +361,34 @@ pub fn run(executable: &str, args: Vec<&str>, target: Target, automatic_screen: 
                             failures = 0;
                             registration.unlock("monitoring", "unlock_verified");
                         },
-                        Ok(Outcome::Blocked) => { private_block = true; registration.unlock("blocked", "unverified_attempt"); },
+                        Ok(Outcome::Blocked) => {
+                            private_block = true;
+                            registration.unlock("blocked", "unverified_attempt");
+                            crate::launch_progress::update("manual_unlock", "automatic_unlock_blocked");
+                        },
                         _ => {
                             failures = failures.saturating_add(1);
                             next_unlock = Instant::now() + retry_delay(failures);
                             registration.unlock("waiting", "password_editor_unavailable");
+                            crate::launch_progress::update("manual_unlock", "password_editor_unavailable");
                         },
                     }
                 },
-                Ok(_) => { registration.unlock("unavailable", "unsupported_or_changed_method"); },
+                Ok(_) => {
+                    registration.unlock("unavailable", "unsupported_or_changed_method");
+                    crate::launch_progress::update("manual_unlock", "unsupported_unlock_state");
+                },
                 Err(_) => {
                     failures = failures.saturating_add(1);
                     next_unlock = Instant::now() + retry_delay(failures);
                     registration.unlock("waiting", "device_state_unavailable");
+                    crate::launch_progress::update("manual_unlock", "device_state_unavailable");
                 },
             }
         }
         if cancelled() { return Ok(String::new()); }
         if pending_power && Instant::now() >= next_restore {
+            crate::launch_progress::update("unlocking", "restoring_screen_off");
             next_restore = Instant::now() + Duration::from_secs(3);
             let restored = (|| -> Result<bool, String> {
                 let current = unlock_detection::snapshot(&target, &mut cancelled)?;
@@ -386,8 +406,14 @@ pub fn run(executable: &str, args: Vec<&str>, target: Target, automatic_screen: 
                 let after = unlock_detection::snapshot(&target, &mut cancelled)?;
                 Ok(after.unlocked && after.panel == Some(Panel::Off))
             })().unwrap_or(false);
-            if restored { pending_power = false; monitor.reset_after_unlock(); registration.unlock("monitoring", "unlock_verified"); }
-            else if pending_power { registration.unlock("waiting", "screen_off_unavailable"); }
+            if restored {
+                pending_power = false; monitor.reset_after_unlock(); registration.unlock("monitoring", "unlock_verified");
+                crate::launch_progress::unlocked();
+            }
+            else if pending_power {
+                registration.unlock("waiting", "screen_off_unavailable");
+                crate::launch_progress::update("manual_unlock", "screen_off_unavailable");
+            }
             else { continue; }
         }
         if mirror.0.is_none() && !private_block && !pending_power {
