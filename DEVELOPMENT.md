@@ -145,6 +145,15 @@ tests ignored. Read-only snapshot/inventory comparisons, metadata preflight,
 and the controlled unlock runs were executed separately. Frontend files are
 unchanged from the previously verified 127-check suite.
 
+Portable **v23** was built from clean commit
+`67201f78b2ac55af60a0b57d2b07ae301b5a035c` at
+`artifacts/adb-controls-preview-v23/Start Test Build.cmd`. All 18 manifest hashes
+were verified; the executable is x64 (`0x8664`), GUI subsystem 2, with separate
+profile `me.vcarriere.scrcpy-plus.preview`. Executable SHA-256:
+`9e26f39e3a709dce4ad31c4b30650b854f38cb77cdbbf319b45b5c6878e97efb`.
+It was not opened on the owner's desktop. Close the previous preview before
+using this launcher so the native code under test is the new build.
+
 ## Controlled live unlock timing — November 26, 2026
 
 After the owner's explicit request to benchmark the phone, one controlled native
