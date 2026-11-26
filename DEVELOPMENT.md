@@ -126,6 +126,16 @@ shortcut or keep-off-before-wake experiment is included. The native test harness
 now records sleep cleanup separately from authentication success. Full remaining
 device/recovery parity stays on the backlog.
 
+Portable **v25** was built from clean commit
+`c346bc0b0d7521120ac1fe213bb864fe2988bc2e` at
+`artifacts/adb-controls-preview-v25/Start Test Build.cmd`, using the same scrcpy
+runtime files as the measured v24 runtime. All 18 manifest hashes, x64 GUI
+executable format, and separate preview profile were verified. Executable
+SHA-256: `677f4aa7321752ebc3ff3cc25d624aeab2d9873cccf99bd924a4d46eadbb6df0`.
+The preview was not opened on the owner's desktop. Final host-only cleanup
+checks showed no test/mirror process; device checks already confirmed no helper
+process or temporary JAR. The installed app remains unchanged.
+
 ## Pixel access resumed — November 26, 2026
 
 The owner explicitly resumed access with "pixel is back". The same Pixel is
