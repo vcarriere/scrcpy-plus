@@ -149,9 +149,15 @@ Verification limits at this checkpoint:
 - The installed application, its existing tools, pairing keys, phone state, and
   password helper have not been changed by this update implementation. Native
   password playback acceptance from v18 remains pending local enrollment.
-- Preview v19 is the next build target. Its final source commit, executable
-  format, and packaged hashes will be recorded after packaging; source work or
-  synthetic results alone do not establish owner acceptance.
+- Preview v19 was built from clean source commit
+  `0a6caeedff00e16fa927a237a3c6f783e2e309d3` and is available at
+  `artifacts/adb-controls-preview-v19/Start Test Build.cmd`. All 18 manifest file
+  hashes matched. Its executable is an x64 Windows GUI (machine `0x8664`,
+  subsystem 2), using the separate `me.vcarriere.scrcpy-plus.preview` profile.
+  Executable SHA-256:
+  `43b6b11c36a0dcaa266b781ca95988aa56d9cbcd85cf15208cb35fee0a18a4f5`.
+  Packaging did not launch the app. Source, synthetic, and packaging results do
+  not establish full-SDK or owner acceptance; the installed app is unchanged.
 
 New implementation references are `tool_catalog.rs`, `adb_installer.rs`, the
 verified/kept-package paths in `downloader.rs`, native activation commands in
