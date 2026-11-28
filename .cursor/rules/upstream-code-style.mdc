@@ -1,5 +1,5 @@
 ---
-description: Preserve the original author's code style throughout this fork
+description: Preserve the original author's code and interface style throughout this fork
 alwaysApply: true
 ---
 
@@ -12,4 +12,8 @@ alwaysApply: true
   follow the closest comparable upstream file's conventions.
 - Keep changes focused. Do not reformat unrelated code or replace established
   patterns with personal preferences; avoid broad formatter-driven changes.
+- Follow the original app's interface style for all UI work. Reuse its existing
+  components, button classes, colors, typography, spacing, and icon conventions.
+  Match the original primary/secondary action styling rather than introducing a
+  separate appearance for new controls.
 - Keep this instruction in project guidance, outside the feature/fix backlog.

@@ -4,13 +4,19 @@
             <p class="card-title text-white">SCRCPY</p>
 
             <p class="mt-8 text-white">{{ $t('launch_options') }}</p>
-            <label v-for="option in basic_options" :key="option.arg" class="flex cursor-pointer">
-                <input type="checkbox" class="checkbox checkbox-primary" :value="option.arg" v-model="active_args" />
-                <div class="ml-2">
-                    <p class="text-white">{{ $t(`scrcpy_options.${option.arg}`) }}</p>
-                    <p>{{ $t(`scrcpy_flags.${option.arg}`) }}</p>
-                </div>
-            </label>
+            <template v-for="option in basic_options" :key="option.arg">
+                <label class="flex cursor-pointer">
+                    <input type="checkbox" class="checkbox checkbox-primary" :value="option.arg" v-model="active_args" />
+                    <div class="ml-2">
+                        <p class="text-white">{{ $t(`scrcpy_options.${option.arg}`) }}</p>
+                        <p>{{ $t(`scrcpy_flags.${option.arg}`) }}</p>
+                    </div>
+                </label>
+                <protected_screen_check v-if="option.arg === '--turn-screen-off'" :device="device" :running="running[device]"
+                    v-model="automatic_screen" :enabled="screen_control_allowed" />
+            </template>
+
+            <automatic_unlock :device="device" :selection="selection" :adb_available="adb_available" />
 
             <div class="collapse collapse-arrow bg-base-300">
                 <input type="checkbox" />
@@ -84,28 +90,31 @@
                 </div>
             </div>
 
-            <button class="btn btn-primary text-white mt-16" :disabled="running[device]" @click="start_scrcpy">
-                <icon name="play" size="20x20" />
-                <span>{{ $t('start') }}</span>
+            <button class="btn btn-primary text-white mt-16" :disabled="!device || running[device] || !adb_available" @click="start_scrcpy">
+                <span v-if="is_starting(device)" class="inline-block h-4 w-4 shrink-0 animate-spin rounded-full border-2 border-current border-t-transparent motion-reduce:animate-none" aria-hidden="true"></span>
+                <icon v-else name="play" size="20x20" />
+                <span>{{ is_starting(device) ? 'Starting SCRCPY…' : $t('start') }}</span>
             </button>
         </div>
     </div>
 </template>
 
 <script>
-import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 export default {
-    props: ["device"],
+    props: ["device", "selection"],
     setup() {
         // Shared state so running sessions survive navigating between pages
         const running = useState("scrcpy_running", () => ({}));
-        const bitrate = useState("scrcpy_bitrate", () => 8);
-        return { running, bitrate };
+        const { available: adb_available } = useAdbStatus();
+        const { is_starting, start_launch } = useScrcpyLaunch();
+        return { running, adb_available, is_starting, start_launch };
     },
     data() {
         return {
             active_args: [],
+            bitrate: 8,
+            automatic_screen: false,
             custom_flags: "",
             custom_window_name: false,
             window_title: "",
@@ -126,7 +135,7 @@ export default {
                 { arg: "--keyboard=uhid" },
             ],
             window_options: [
-                { arg: "--lock-video-orientation" },
+                { arg: "--capture-orientation=@" },
                 { arg: "--no-video" },
             ],
             advanced_options: [
@@ -142,7 +151,15 @@ export default {
             ]
         }
     },
+    computed: {
+        screen_control_allowed() {
+            return this.active_args.includes('--turn-screen-off') && !this.virtual_display
+                && (!this.custom_display_id || String(this.display_id) === '0')
+                && !this.active_args.some(arg => ['--otg', '--no-control', '--no-video'].includes(arg));
+        }
+    },
     watch: {
+        automatic_screen() { this.save_config(); },
         active_args() { this.save_config(); },
         custom_flags() { this.save_config(); },
         custom_window_name() { this.save_config(); },
@@ -167,7 +184,7 @@ export default {
             this.bitrate = Number(event.target.value);
         },
         remember_enabled() {
-            return localStorage.getItem("setting.save_scrcpy_config") == "true";
+            return localStorage.getItem("setting.save_scrcpy_config") !== "false";
         },
         save_config() {
             if (!this.remember_enabled()) {
@@ -176,6 +193,7 @@ export default {
             }
             localStorage.setItem("scrcpyplus.scrcpy_config", JSON.stringify({
                 active_args: this.active_args,
+                automatic_screen: this.automatic_screen,
                 custom_flags: this.custom_flags,
                 custom_window_name: this.custom_window_name,
                 custom_display_id: this.custom_display_id,
@@ -196,7 +214,8 @@ export default {
                 const saved = JSON.parse(localStorage.getItem("scrcpyplus.scrcpy_config"));
                 if (!saved) return;
                 const known = [...this.basic_options, ...this.window_options, ...this.advanced_options].map(o => o.arg);
-                if (Array.isArray(saved.active_args)) this.active_args = saved.active_args.filter(a => known.includes(a));
+                if (Array.isArray(saved.active_args)) this.active_args = [...new Set(saved.active_args.map(a => a === '--lock-video-orientation' ? '--capture-orientation=@' : a).filter(a => known.includes(a)))];
+                this.automatic_screen = saved.automatic_screen === true;
                 if (typeof saved.custom_flags == "string") this.custom_flags = saved.custom_flags;
                 this.custom_window_name = saved.custom_window_name === true;
                 this.custom_display_id = saved.custom_display_id === true;
@@ -223,6 +242,7 @@ export default {
             if (typeof selected === "string") this.record_path = selected;
         },
         async start_scrcpy() {
+            if (!this.adb_available) return;
             let scrcpy_start_args = ["-s", this.device];
 
             scrcpy_start_args.push(...this.active_args);
@@ -251,10 +271,8 @@ export default {
             if (!device || this.running[device]) return;
             this.running[device] = true;
             try {
-                await invoke("run_scrcpy", { args: scrcpy_start_args });
-            } catch (e) {
-                console.error("Failed to start scrcpy", e);
-            } finally {
+                await this.start_launch(device, { args: scrcpy_start_args, automaticScreen: this.automatic_screen && this.screen_control_allowed, selection: this.selection });
+            } catch {} finally {
                 this.running[device] = false;
             }
         },

@@ -1,0 +1,27 @@
+{
+  "sourceSha256": "88bfcedca3ae6f71c66264ec556dd1ba25ac11ccf763886802cf48bf3aa0b442",
+  "sources": [
+    {
+      "path": "buildtools/unlock-guard/src/com/scrcpyplus/unlockguard/Main.java",
+      "sha256": "88bfcedca3ae6f71c66264ec556dd1ba25ac11ccf763886802cf48bf3aa0b442"
+    },
+    {
+      "path": "buildtools/unlock-guard/src/com/scrcpyplus/unlockguard/PowerDump.java",
+      "sha256": "d783b91fefaea5233afcf927aa775596902d934bdc2c91a14c74a68c9ef6062e"
+    },
+    {
+      "path": "buildtools/unlock-guard/src/com/scrcpyplus/unlockguard/PowerProto.java",
+      "sha256": "6ad5deba611ac42692b5df7a0bd5e6ed6e8ed7f5241c22f285782548f07bf181"
+    }
+  ],
+  "helperSha256": "5bab4c67970d5e34be4cabdfbaa7dd7d5a97693323af8c4ac1fcb15ca0d9bfb0",
+  "helperBytes": 10440,
+  "javaRelease": 8,
+  "androidMinApi": 35,
+  "javaVersion": "javac 27.0.1.1",
+  "d8Version": "D8 9.5.33 (build 06d10cab5b08b17aa947de640994f682c3786336 from go/r8bot (luci-r8-custom-ci-jammy-c3d-us-central1-b-2-5qn4))",
+  "syntheticChecks": 51,
+  "protoSyntheticChecks": 39,
+  "powerSyntheticChecks": 27,
+  "deviceTested": false
+}

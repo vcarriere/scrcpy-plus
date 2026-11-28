@@ -1,6 +1,8 @@
 <template>
   <NuxtLayout>
       <NuxtPage></NuxtPage>
+      <version_change_confirmation />
+      <scrcpy_launch_progress />
   </NuxtLayout>
 </template>
 

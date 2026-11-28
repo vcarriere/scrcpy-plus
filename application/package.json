@@ -8,20 +8,24 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:ui": "playwright test",
+    "test:adb": "node --test tests/adb-multiple.mjs"
   },
   "devDependencies": {
     "@nuxtjs/i18n": "^10.6.0",
     "@nuxtjs/tailwindcss": "^6.14.0",
-    "@tauri-apps/cli": "^2.12.2",
+    "@playwright/test": "^1.65.1",
+    "@tauri-apps/cli": "^2.12.6",
     "daisyui": "^4.12.24",
-    "nuxt": "^4.6.1",
-    "vue": "^3.5.44",
-    "vue-router": "^5.4.0"
+    "esbuild": "^0.28.2",
+    "nuxt": "^4.7.0",
+    "vue": "^3.5.46",
+    "vue-router": "^5.5.1"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.12.3",
-    "@tauri-apps/plugin-dialog": "^2.8.2",
-    "@tauri-apps/plugin-opener": "^2.7.1"
+    "@tauri-apps/api": "^2.12.5",
+    "@tauri-apps/plugin-dialog": "^2.8.4",
+    "@tauri-apps/plugin-opener": "^2.7.3"
   }
 }
