@@ -454,6 +454,92 @@ mod tests {
         });
     }
 
+    #[test]
+    #[ignore = "Read-only filtered IME priority comparison with a hash-pinned profiler; no credential retrieval, input, or power change"]
+    fn live_ime_priority_profile_without_input() {
+        run_read_only_profile("com.scrcpyplus.unlockguard.MainImeCriticalProfile", |target, output| {
+            let lines: Vec<_> = profile_frames(target, output).lines().collect();
+            assert!(lines.len() % 3 == 0 && (3..=5).contains(&(lines.len() / 3)));
+            let mut normal = Vec::new();
+            let mut critical = Vec::new();
+            for trial in lines.chunks_exact(3) {
+                let values: Vec<u64> = trial.iter().zip(["ime_normal", "ime_critical", "ime_equal"]).map(|(line, expected)| {
+                    let (label, value) = line.split_once('=').unwrap(); assert_eq!(label, expected); value.parse().unwrap()
+                }).collect();
+                assert!(values[0] <= 2500000 && values[1] <= 2500000);
+                assert_eq!(values[2], 1, "Both fresh IME dumps must produce byte-identical filtered state.");
+                normal.push(values[0]); critical.push(values[1]);
+            }
+            let mut normal_sorted = normal.clone(); normal_sorted.sort();
+            let mut critical_sorted = critical.clone(); critical_sorted.sort();
+            println!("Validated phone IME comparison: normal_micros={:?}, normal_median_micros={}, critical_micros={:?}, critical_median_micros={}, filtered_equal=true, credential_access=false, input_sent=false", normal, normal_sorted[normal_sorted.len() / 2], critical, critical_sorted[critical_sorted.len() / 2]);
+        });
+    }
+
+    fn rehearsal_frames(target: &Target, output: &str) -> (Vec<u64>, u64) {
+        let mut rest = output.strip_prefix("REHEARSAL_BEGIN 12\n").expect("Only the fixed twelve-snapshot rehearsal is supported.");
+        let mut micros = Vec::new();
+        for index in 0..12 {
+            let (header, body) = rest.split_once('\n').unwrap();
+            let fields: Vec<_> = header.split(' ').collect();
+            assert_eq!(fields.len(), 3); assert_eq!(fields[0], "SNAPSHOT"); assert_eq!(fields[1], index.to_string());
+            let elapsed: u64 = fields[2].parse().unwrap(); assert!(elapsed <= 2500000);
+            let (frame, tail) = body.split_once("@@end\n").unwrap();
+            let state = parse_snapshot(target, &format!("{}@@end\n", frame)).expect("Every rehearsal snapshot must pass the complete native parser.");
+            assert!(state.method == "password" && state.panel.is_some() && (state.safe_locked || state.unlocked));
+            micros.push(elapsed); rest = tail;
+        }
+        let (total, end) = rest.split_once('\n').unwrap();
+        let nanos: u64 = total.strip_prefix("REHEARSAL_TOTAL_NANOS ").unwrap().parse().unwrap();
+        assert_eq!(end, "REHEARSAL_END\n"); assert!(nanos <= 2500000000);
+        let rounded_nanos: u64 = micros.iter().sum::<u64>() * 1000;
+        assert!(nanos >= rounded_nanos && nanos - rounded_nanos < 12000, "The total must agree with every reported collection time.");
+        (micros, nanos)
+    }
+
+    #[test]
+    #[ignore = "Read-only fixed twelve-snapshot phone-local/host-mediated rehearsal; never retrieves credentials, injects input, or changes power"]
+    fn live_guard_rehearsal_without_input() {
+        use std::time::Instant;
+        run_read_only_profile("com.scrcpyplus.unlockguard.MainRehearsalProfile", |target, output| {
+            let (local, nanos) = rehearsal_frames(target, output);
+            let mut persistent = target.clone();
+            let startup = Instant::now();
+            start_diagnostics(&mut persistent, &mut || false).unwrap();
+            let startup_ms = startup.elapsed().as_millis();
+            let mut host = Vec::new();
+            let batch = Instant::now();
+            for _ in 0..12 {
+                let started = Instant::now();
+                let state = snapshot(&persistent, &mut || false).unwrap();
+                assert!(state.method == "password" && state.panel.is_some() && (state.safe_locked || state.unlocked));
+                host.push(started.elapsed().as_micros());
+            }
+            println!("Validated fixed synthetic rehearsal: snapshots=12, phone_collection_micros={:?}, phone_collection_total_micros={}, host_snapshot_micros={:?}, host_batch_micros={}, host_helper_startup_ms={}, credential_access=false, input_sent=false, power_changed=false", local, nanos / 1000, host, batch.elapsed().as_micros(), startup_ms);
+        });
+    }
+
+    #[test]
+    fn validates_every_rehearsal_frame_and_duration() {
+        let target = target_fixture();
+        let mut output = "REHEARSAL_BEGIN 12\n".to_string();
+        for index in 0..12 { output.push_str(&format!("SNAPSHOT {} 10\n{}", index, fixture())); }
+        output.push_str("REHEARSAL_TOTAL_NANOS 120000\nREHEARSAL_END\n");
+        assert_eq!(rehearsal_frames(&target, &output), (vec![10; 12], 120000));
+        for bad in [
+            output.replace("REHEARSAL_BEGIN 12", "REHEARSAL_BEGIN 11"),
+            output.replace("SNAPSHOT 5 10", "SNAPSHOT 4 10"),
+            output.replacen("SNAPSHOT 0 10", "SNAPSHOT 0 2500001", 1),
+            output.replacen("@@focus_display\n", "@@missing_display\n", 1),
+            output.replacen("@@identity_end\nsynthetic-serial", "@@identity_end\nother-serial", 1),
+            output.replace("120000", "119999"),
+            output.replace("120000", "132000"),
+            format!("{}unexpected\n", output),
+        ] {
+            assert!(std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| rehearsal_frames(&target, &bad))).is_err());
+        }
+    }
+
     fn target_fixture() -> Target {
         let id = serde_json::to_string(&["synthetic-serial", "Example", "synthetic-product"]).unwrap();
         Target {

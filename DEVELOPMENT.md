@@ -62,6 +62,93 @@ device labels/grouping, and full child-process cancellation as backlog work.
 Later checkpoints below record the implemented additions and their distinct
 source, simulated, and live verification limits.
 
+## Reusable unlock optimization research — November 28, 2026
+
+The current v25 mirror was left running. All probes in this pass were read-only:
+no credential retrieval, input, display-power changes, UiAutomation connection,
+or desktop inspection. Production unlock code, the embedded helper/receipt, and
+the preview executable are unchanged. Password playback remains the only enabled
+automatic method; PIN/pattern detection does not authorize their playback.
+
+Two separate hash-pinned profilers now have reproducible builds and opt-in native
+callers. The IME profiler alternates complete normal/critical filtered dumps.
+Across three five-pair runs, all fifteen pairs were byte-identical. Run medians
+were **8.101/7.494 ms**, **6.499/6.248 ms**, and **7.611/6.739 ms** for normal versus
+critical. AOSP's critical-priority path keeps server metadata and skips remote
+client/IME diagnostic tails, but the measured saving was below 1 ms per check.
+No production argument change is promoted from this small exploratory result;
+locked/bouncer compatibility still needs its own acceptance check.
+
+The second profiler collects a fixed **twelve** complete snapshots in one phone
+process; this synthetic count is unrelated to any credential. The native caller
+validates every frame's device/user identity, complete state, ordered index, and
+bounded duration, then compares twelve normal host-mediated helper requests.
+Three collection-only phone totals were **385.613, 373.436, and 351.727 ms**;
+the corresponding host batch times were **538.090, 482.195, and 458.845 ms**.
+Host helper startup, excluded from those batch times, was **443, 486, and 434 ms**.
+The observed **107–152 ms** difference includes transport, host polling/parsing,
+and collection variation. Local collection ran first in each pair; these are
+exploratory measurements, not a randomized full-unlock comparison or an estimate
+of how fast a new input implementation will be. The profiles never inject input
+or establish that a visible entry surface is ready.
+
+The larger remaining opportunities are preparation and session startup, rather
+than character typing, which already took about 0.4 s in the last guarded runs.
+Next, measure setup, explicit bouncer dismissal, geometry, stable readiness,
+unlock verification, and video opening separately. AOSP's `cmd window
+dismiss-keyguard` calls `IWindowManager.dismissKeyguard(null, null)`; its size
+query calls `getInitialDisplaySize` and `getBaseDisplaySize`. A transient phone
+worker can investigate those same Binder operations without spawning an extra
+host client for each command. Actual dismissal is an input-affecting step and
+was not called by these read-only probes. Keep the existing successful power
+controller and explicit bouncer preparation, including the prior rejected
+shortcut's lesson: retained IME metadata is not visible-field proof.
+
+The reusable design should keep ownership/privacy/attempt state common, with
+separate readiness and action adapters for each method. A phone-side fresh guard
+immediately followed by one action is a useful first prototype. Android's
+`injectInputEventToTarget` plus explicit display 0 can restrict dispatch to a
+freshly verified SystemUI UID; ordinary Shell has `INJECT_EVENTS`. UID binding
+can cover shared-UID packages, does not identify an exact editor/window, and does
+not make guard/dispatch atomic.
+Moving an entire credential into a phone worker would be a separate reviewed
+change: persist the host block before transfer, use a one-use bounded attempt,
+expire/cancel on disconnect or revocation, wipe secret buffers, preserve fresh
+per-action checks, and verify completion independently on the host. The current
+read-only helper must not silently become a credential consumer.
+
+PIN can eventually use verified digit key events, with distinct readiness and
+auto-confirm handling rather than password-editor checks or an unconditional
+Enter. Pattern requires fresh geometry and one continuous down/move/up stroke,
+including intermediate-dot rules and rotation. Cancel aborts a pattern; Up
+submits it. These adapters share the attempt engine, not one generic input recipe.
+Keyguard-locked notifications could also shorten the current five-second relock
+polling delay, but report keyguard showing rather than password readiness and
+must only trigger a fresh full check. No listener or accessibility service was
+registered during this pass.
+
+Profiler builds each passed the **117 existing Java checks**, the unsupported-host
+fixed-failure probe, and normal-source/resource/receipt preservation guards.
+Both rebuilt byte-identically twice; Services and PowerProto modes also passed.
+The native rehearsal parser has synthetic rejection checks for wrong identity,
+missing framing, duplicate indices, invalid durations/totals, and trailing output.
+Native suite result: **150 passed, 30 opt-in/environment tests ignored**. All six
+explicit live read-only profiles passed separately. Test JARs/helper processes
+were cleaned up; the pre-existing v25 GUI/mirror and shared ADB server stayed up.
+No new portable app is needed for this test-only change.
+
+Rebuild instructions, framing, hashes/receipts, and primary sources are in
+[the profiling README](buildtools/unlock-guard/profile/README.md). Additional API
+references are the AOSP Android 17
+[WindowManager shell commands](https://android.googlesource.com/platform/frameworks/base/+/94b4c163b7dfe5ce3607f7bb8456f9573f7de57d/services/core/java/com/android/server/wm/WindowManagerShellCommand.java),
+[WindowManager service](https://android.googlesource.com/platform/frameworks/base/+/94b4c163b7dfe5ce3607f7bb8456f9573f7de57d/services/core/java/com/android/server/wm/WindowManagerService.java),
+[input service](https://android.googlesource.com/platform/frameworks/base/+/94b4c163b7dfe5ce3607f7bb8456f9573f7de57d/services/core/java/com/android/server/input/InputManagerService.java),
+[Shell permissions](https://android.googlesource.com/platform/frameworks/base/+/94b4c163b7dfe5ce3607f7bb8456f9573f7de57d/packages/Shell/AndroidManifest.xml),
+[PIN controller](https://android.googlesource.com/platform/frameworks/base/+/94b4c163b7dfe5ce3607f7bb8456f9573f7de57d/packages/SystemUI/src/com/android/keyguard/KeyguardPinViewController.java),
+and [pattern view](https://android.googlesource.com/platform/frameworks/base/+/94b4c163b7dfe5ce3607f7bb8456f9573f7de57d/core/java/com/android/internal/widget/LockPatternView.java).
+These are API/protocol references, not copied implementations; existing upstream
+attribution and licensing remain in place.
+
 ## Further native startup optimization — November 26, 2026
 
 The final candidate produced two successful complete locked/asleep Pixel starts:

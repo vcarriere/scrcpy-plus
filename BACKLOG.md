@@ -139,9 +139,9 @@ commands in `lib.rs`, `scrcpy_release.ts`, and item 01's lifecycle code.
 
 Current scope: automatic method detection and **password unlock only**, following
 the owner's correction. Item 04 is merged here; PIN and nine-dot pattern replay
-remain deferred. The native implementation is in source, with live password
-acceptance still pending. A checked item below means implemented code, not a
-claim that all real-device acceptance checks have passed. The working installed
+remain deferred. The native implementation has passed guarded locked-startup
+password tests; broader live acceptance is still pending. A checked item below
+does not mean all real-device acceptance checks have passed. The working installed
 app and existing password helper are unchanged and are not automatically migrated.
 
 Detection is source-confirmed and now has a read-only Pixel result: Android's
@@ -263,6 +263,38 @@ a fingerprint prompt, and an app's authentication prompt is not device unlock.
       behind measured results, current identity/user/editor/panel checks,
       cancellation, and failure blocking; whole-string asynchronous input is not
       an atomic replacement for intervening guards.
+- [x] Research reusable password/PIN/pattern optimization and measure diagnostic
+      locality without input. Three fixed twelve-snapshot Pixel rehearsals took
+      **352–386 ms** collecting on the phone versus **459–538 ms** through the
+      current persistent host channel. This estimates only **107–152 ms** of
+      diagnostic/transport savings for that synthetic workload, not a complete
+      unlock gain. Fifteen alternating normal/critical IME pairs returned
+      identical filtered state, but each run's median saving was under 1 ms.
+      Keep both prototypes test-only; these results do not justify a new
+      credential-consuming implementation or a production IME change by themselves.
+- [ ] Prioritize preparation/startup measurements over faster typing: separately
+      time transport/identity checks, control/helper setup, explicit bouncer
+      preparation, stable editor readiness, verification, and video opening.
+      Evaluate direct WindowManager Binder calls for the existing dismissal and
+      fresh display-size reads before changing their behavior. Retain explicit
+      preparation; current editor metadata and keyguard events do not prove a
+      visible password field. Keep the proven scrcpy screen-power path.
+- [ ] Prototype a shared guarded action engine with separate password, PIN, and
+      pattern adapters. Keep device/user/method binding, privacy, one-use attempt
+      state, cancellation, enrollment revocation, and final verification common.
+      First evaluate phone-side **fresh guard + one action**, with explicit
+      display 0 and the verified SystemUI UID. UID targeting narrows the receiver
+      but does not bind an exact package/editor/window, may cover shared-UID
+      packages, and does not make guard/dispatch atomic.
+      Whole-credential phone-local execution additionally requires bounded secret
+      lifetime, native durable blocking before transfer, a cancellable one-use
+      protocol, disconnect/expiry enforcement, revocation checks, wiping, and
+      independent host verification. Keep it separate from the read-only helper
+      until deliberately implemented and reviewed. PIN/pattern playback stays off.
+- [ ] Evaluate keyguard change notifications as a monitoring trigger to reduce
+      the current five-second relock polling delay. Treat events as hints that
+      require a fresh full guard; they do not establish bouncer readiness and
+      cannot authorize input alone.
 - [x] Use one method-aware layout and backend separation for configuration,
       enrollment, privacy, monitoring, and recovery. Detection and the enrolled
       type remain distinct; detecting a different method never converts a saved
@@ -295,7 +327,10 @@ Deferred methods, integrated from former item 04:
 
 - [ ] Add explicit PIN enrollment/confirmation and a verified numeric entry
       adapter only after password parity. Never reinterpret an existing password
-      as a PIN or guess a fallback method.
+      as a PIN or guess a fallback method. Account for auto-confirm versus an
+      explicit submit button, and do not require a password IME editor as PIN
+      readiness proof. Prefer verified key events over keypad coordinates where
+      supported; stop immediately after independently verified completion.
 - [ ] Add **Pattern** as a per-device method using a 3×3 enrollment/confirmation
       grid, reset/remove controls, and the same bound protected storage, privacy,
       attempt serialization, persistent uncertainty block, and manual recovery.
@@ -305,6 +340,9 @@ Deferred methods, integrated from former item 04:
       scrcpy's supported control transport. Separate taps/swipes are insufficient.
       Cover intermediate-dot rules, timing, cancellation, rotation/insets, grid
       positions, and device-display coordinates independent of preview scale/crop.
+      Keep one finger/down-time throughout the path; use Cancel to abort rather
+      than Up, because Up submits the pattern. Require fresh geometry and a
+      method-specific entry-surface proof before starting the stroke.
       Retain attribution/source/license notices for any upstream-derived transport
       changes. Validate synthetic paths before explicitly enrolled live testing;
       distinguish manual click-and-drag from saved automatic pattern playback.
@@ -318,8 +356,9 @@ preparation probe failed closed because duplicate main/numeric display-group wak
 diagnostics were rejected; restricting the query to the main power-state line
 resolved that ambiguity. The passing probe verified a stable current display-0
 password editor, pinned control, and panel Off, then restored the original
-sleep/panel state. It retrieved and entered no secret. No native live password
-success, full helper parity, or final feature acceptance is claimed.
+sleep/panel state. It retrieved and entered no secret. Later guarded password
+startup tests passed as recorded above. Full helper parity and final feature
+acceptance remain open; the November 28 optimization probes did not enter input.
 See [DEVELOPMENT.md](DEVELOPMENT.md) for the current evidence and limitations.
 
 Security scope: use established OS protection; files/records are not immutable.

@@ -112,3 +112,116 @@ The corresponding Android 15 revision
 `cc8bb19595c661f5cf42f330457000e643c67d1b` and Android 16 revision
 `99b01a65cc4c104933788b3143285ab6bae65827` were checked for the same field,
 enum, state source, and default-omission behavior.
+
+## Separate normal/critical IME comparison
+
+```powershell
+./buildtools/unlock-guard/Build-Profile.ps1 -Mode ImeCritical
+./buildtools/unlock-guard/Build-Profile.ps1 -Mode ImeCritical -Trials 3
+```
+
+This creates `artifacts/unlock-guard-ime-critical-profile-5.jar` and its own JSON
+receipt. The entry point is `com.scrcpyplus.unlockguard.MainImeCriticalProfile`,
+with no arguments or stdin commands. The profiler uses the existing private
+Android dump wrapper and a new `ImeFilter` for every sample. It performs one
+complete normal snapshot, five alternating normal/critical IME dump pairs, and a
+second complete normal snapshot. It does not change the production helper's IME
+arguments or promote a result into normal operation.
+
+The comparison has the same `PROFILE_BEFORE`, `PROFILE_TIMINGS`, and
+`PROFILE_AFTER` framing as the other profilers. Each pair emits exactly:
+
+```text
+ime_normal=<microseconds>
+ime_critical=<microseconds>
+ime_equal=<0|1>
+```
+
+Normal uses no dump arguments; critical uses `--dump-priority CRITICAL`. Each
+duration includes Binder invocation, bounded pipe draining, filtering, and worker
+completion. `ime_equal=1` means the complete filtered strings (and therefore their
+UTF-8 encodings) are byte-identical for that pair; unequal output is reported as
+zero, never hidden or retried. Raw IME output, history, editor contents, and the
+individual filtered IME strings are not emitted. The native caller must validate
+both complete snapshots against the selected target and reject a comparison with
+any zero equality result or invalid/missing framing before drawing conclusions.
+
+Android 15/16/17 `dumpCritical` preserves the server's current metadata but exits
+before remote IME/client `TransferPipe.dumpAsync` work. Android 16/17 current
+user/repository/editor fields precede that exit; Android 15's older diagnostic
+layout still needs its own adapter. References:
+
+- [Android 17 IME critical dispatcher and dump](https://android.googlesource.com/platform/frameworks/base/+/94b4c163b7dfe5ce3607f7bb8456f9573f7de57d/services/core/java/com/android/server/inputmethod/InputMethodManagerService.java#6413)
+- [Android 16 equivalent](https://android.googlesource.com/platform/frameworks/base/+/99b01a65cc4c104933788b3143285ab6bae65827/services/core/java/com/android/server/inputmethod/InputMethodManagerService.java#6014)
+- [Android 15 equivalent](https://android.googlesource.com/platform/frameworks/base/+/cc8bb19595c661f5cf42f330457000e643c67d1b/services/core/java/com/android/server/inputmethod/InputMethodManagerService.java#6002)
+- [PriorityDump argument handling](https://android.googlesource.com/platform/frameworks/base/+/94b4c163b7dfe5ce3607f7bb8456f9573f7de57d/services/core/java/com/android/server/utils/PriorityDump.java#126)
+
+## Separate twelve-snapshot rehearsal
+
+```powershell
+./buildtools/unlock-guard/Build-Profile.ps1 -Mode Rehearsal
+```
+
+This creates `artifacts/unlock-guard-rehearsal-profile-12.jar` and its own receipt.
+The entry point is `com.scrcpyplus.unlockguard.MainRehearsalProfile`, with no
+arguments or stdin commands. The count is always twelve; `-Trials` is rejected
+in this mode. It calls the existing complete snapshot collector twelve times in
+one process, preserving every normal identity/state check and query order.
+There is no credential retrieval, input, screen-power operation, UiAutomation
+connection, or capability-changing call.
+
+One atomic successful UTF-8 response is framed exactly as follows:
+
+```text
+REHEARSAL_BEGIN 12
+SNAPSHOT 0 <durationMicros>
+<normal complete @@identity ... @@end snapshot>
+SNAPSHOT 1 <durationMicros>
+<normal complete @@identity ... @@end snapshot>
+<indices 2 through 10, each with its complete snapshot>
+SNAPSHOT 11 <durationMicros>
+<normal complete @@identity ... @@end snapshot>
+REHEARSAL_TOTAL_NANOS <collectionNanos>
+REHEARSAL_END
+```
+
+Indices are zero-based and consecutive. Each duration measures only its snapshot
+collection call, including the existing diagnostic and identity reads. The total
+is the sum of those twelve nanosecond durations; it excludes reflection setup,
+framing, UTF-8 encoding, and stdout transfer. Per-snapshot microseconds are rounded
+down, so the total is at least their sum times 1,000 and less than that sum plus
+12,000 nanoseconds. This is a read-only diagnostic-cost rehearsal, not password,
+PIN, or pattern playback and not an unlock/readiness authorization.
+
+The native caller must validate all twelve complete snapshots using its normal
+selected-device parser, check the framing/count/index/duration bounds, and retain
+its own bounded process timeout and cleanup. It must not infer validity from a
+timing row or from collection success alone.
+
+Both new modes share test-only `ProfileSupport`: a separate 2,500 ms watchdog,
+fixed `PROFILE_UNAVAILABLE` failure output, and a maximum atomic response of
+262,144 UTF-8 bytes. Every service still passes through the production collector's
+4 MiB/service and line/filter limits. No successful partial response is emitted.
+The build runs all 117 normal helper checks and an unsupported-host fixed-failure
+probe; it verifies normal source, resource, and receipt hashes remain unchanged.
+The separate profile support/class is never copied into the embedded helper.
+
+Native opt-in tests are `unlock_detection::tests::live_ime_priority_profile_without_input`
+and `unlock_detection::tests::live_guard_rehearsal_without_input`. Use the existing
+development environment and explicitly select the current ADB executable and
+fresh transport ID through `SCRCPY_PLUS_TEST_ADB` and `SCRCPY_PLUS_TEST_TRANSPORT`.
+Set `SCRCPY_PLUS_TEST_PROFILE_JAR` to the corresponding generated JAR and
+`SCRCPY_PLUS_TEST_PROFILE_SHA256` to its verified build-receipt hash, then run the
+selected test with `cargo test --lib --locked <full-test-name> -- --ignored --exact
+--nocapture` from `application/src-tauri`. Never run a general `--ignored` sweep:
+other ignored tests change phone power or perform an enrolled unlock.
+
+Both callers pin/verify the local JAR and pushed copy, use a unique temporary
+phone path, and remove only that file after fresh target verification. They
+validate the snapshots with the normal native parser and print only aggregate
+diagnostic timings. Rehearsal additionally starts a normal persistent read-only
+helper and measures twelve host-mediated snapshots; that helper is also owned
+and cleaned up. Phone totals exclude startup and output transfer; host totals
+include transport, host polling/parsing, and collection. Do not interpret their
+difference as a proven full-unlock speedup. Neither caller accesses enrollment
+secrets, writes input/power, registers accessibility services, or closes mirrors.
